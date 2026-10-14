@@ -1,0 +1,198 @@
+"""FastAPI Server for NexusGraph.
+
+Provides:
+- Server-Sent Events (SSE) streaming of multi-agent reasoning & Cypher traces
+- Multigraph visualizer endpoints (org_brain, procedural_memory, blackboard)
+- Direct FastMCP tool invocation endpoints
+- 1-Click demo scenarios for judges
+"""
+
+import json
+import logging
+import uuid
+from contextlib import asynccontextmanager
+from typing import Any, Dict, Optional
+from fastapi import FastAPI, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+
+from app.config import settings
+from app.db.falkor_client import get_falkor_manager
+from app.db.schema import create_graph_indexes, verify_graph_schema
+from app.db.seed import seed_all_graphs
+from app.agents.orchestrator import (
+    stream_swarm_investigation,
+    run_swarm_pipeline,
+    DEMO_SCENARIOS,
+)
+from app.mcp_server import graph_tools
+from app.models.payloads import InvestigateRequest, SubgraphPayload
+
+# Configure logging
+logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
+logger = logging.getLogger("nexusgraph.api")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: initialize FalkorDB indexes and synthetic seed dataset."""
+    logger.info("Initializing NexusGraph backend on FalkorDB...")
+    manager = get_falkor_manager()
+    try:
+        create_graph_indexes(manager)
+        if settings.seed_on_startup:
+            seed_all_graphs(manager, session_id="demo")
+    except Exception as exc:
+        logger.warning("Startup seeding notice: %s", exc)
+    yield
+    logger.info("NexusGraph backend shutting down.")
+
+
+app = FastAPI(
+    title="NexusGraph API",
+    description="Autonomous Multi-Agent Engineering Brain & Incident Remediation Swarm on FalkorDB",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Enable CORS for Next.js frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/api/health")
+def get_health() -> Dict[str, Any]:
+    """Health check and FalkorDB multigraph status."""
+    manager = get_falkor_manager()
+    schema_status = verify_graph_schema(manager)
+    return {
+        "status": "healthy",
+        "service": "NexusGraph Swarm Engine",
+        "falkordb_host": f"{settings.falkordb_host}:{settings.falkordb_port}",
+        "schema_status": schema_status
+    }
+
+
+@app.get("/api/scenarios")
+def get_scenarios():
+    """Returns the list of 1-Click judge demonstration scenarios."""
+    return DEMO_SCENARIOS
+
+
+@app.post("/api/seed")
+def trigger_seed(session_id: str = "demo") -> Dict[str, str]:
+    """Resets and reseeds all FalkorDB multigraph namespaces."""
+    manager = get_falkor_manager()
+    seed_all_graphs(manager, session_id=session_id)
+    return {"message": "Successfully seeded org_brain, procedural_memory, and blackboard."}
+
+
+@app.get("/api/graph/{graph_name}")
+def get_graph_data(graph_name: str) -> SubgraphPayload:
+    """Returns the complete node & edge topology of a selected multigraph."""
+    manager = get_falkor_manager()
+    allowed_prefixes = ("org_brain", "procedural_memory", "blackboard_")
+    if not any(graph_name.startswith(p) for p in allowed_prefixes):
+        raise HTTPException(status_code=400, detail=f"Invalid graph namespace: {graph_name}")
+    
+    return manager.get_full_graph(graph_name)
+
+
+@app.get("/api/investigate/stream")
+async def stream_investigation(
+    query: str = Query(..., description="Alert message or investigation prompt"),
+    target_service: Optional[str] = Query("payment-engine", description="Anchor service"),
+    session_id: Optional[str] = Query(None, description="Session ID for blackboard isolation")
+):
+    """Server-Sent Events (SSE) streaming endpoint for live agent thoughts and Cypher traces."""
+    active_session_id = session_id or f"session_{uuid.uuid4().hex[:6]}"
+    manager = get_falkor_manager()
+
+    async def event_generator():
+        try:
+            async for step_event in stream_swarm_investigation(
+                session_id=active_session_id,
+                query=query,
+                target_service=target_service or "payment-engine",
+                manager=manager
+            ):
+                payload_json = json.dumps(step_event.model_dump(), default=str)
+                yield f"data: {payload_json}\n\n"
+        except Exception as exc:
+            logger.error("SSE stream error: %s", exc, exc_info=True)
+            err_payload = json.dumps({
+                "agent": "System",
+                "stage": "Error",
+                "status": "error",
+                "thought": f"Streaming encountered an unexpected exception: {exc}",
+                "is_final": True
+            })
+            yield f"data: {err_payload}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@app.post("/api/investigate")
+def run_investigation(req: InvestigateRequest):
+    """Synchronous endpoint to execute the 3-agent swarm pipeline."""
+    session_id = req.session_id or f"session_{uuid.uuid4().hex[:6]}"
+    manager = get_falkor_manager()
+    result = run_swarm_pipeline(
+        session_id=session_id,
+        query=req.query,
+        target_service=req.target_service or "payment-engine",
+        manager=manager
+    )
+    return result
+
+
+@app.post("/api/mcp/tool/{tool_name}")
+def execute_mcp_tool(tool_name: str, payload: Dict[str, Any] = {}):
+    """Directly invokes an individual MCP tool for verification."""
+    manager = get_falkor_manager()
+    tools_map = {
+        "trace_blast_radius": lambda: graph_tools.trace_blast_radius(
+            service_name=payload.get("service_name", "payment-engine"),
+            max_hops=int(payload.get("max_hops", 4)),
+            manager=manager
+        ),
+        "find_breaking_commit_and_owner": lambda: graph_tools.find_breaking_commit_and_owner(
+            service_name=payload.get("service_name", "payment-engine"),
+            manager=manager
+        ),
+        "find_shortest_ownership_path": lambda: graph_tools.find_shortest_ownership_path(
+            person_name=payload.get("person_name", "Arjun Mehta"),
+            service_name=payload.get("service_name", "payment-engine"),
+            manager=manager
+        ),
+        "compute_critical_bottlenecks": lambda: graph_tools.compute_critical_bottlenecks(manager=manager),
+        "recall_or_update_procedural_memory": lambda: graph_tools.recall_or_update_procedural_memory(
+            symptom_signature=payload.get("symptom_signature", "cascading-timeout-ledger"),
+            new_action=payload.get("new_action"),
+            manager=manager
+        ),
+        "mutate_graph_action": lambda: graph_tools.mutate_graph_action(
+            service_name=payload.get("service_name", "payment-engine"),
+            action=payload.get("action", "ROLLBACK_CONFIG_AND_FLUSH_POOL"),
+            session_id=payload.get("session_id", "demo"),
+            manager=manager
+        )
+    }
+
+    if tool_name not in tools_map:
+        raise HTTPException(status_code=404, detail=f"Unknown tool: {tool_name}. Available: {list(tools_map.keys())}")
+
+    return tools_map[tool_name]()

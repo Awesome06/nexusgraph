@@ -1,0 +1,14 @@
+﻿{
+    "version":  "1.0.0",
+    "initialized_at":  "2026-10-14T14:15:24Z",
+    "stack":  "auto",
+    "active_skills":  [
+                          "frameworks/react-fullstack",
+                          "ops/docker",
+                          "db/sql-redis",
+                          "arch/c4-design",
+                          "langs/python-ml",
+                          "frameworks/fastapi",
+                          "langs/async-python"
+                      ]
+}
