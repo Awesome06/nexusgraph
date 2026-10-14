@@ -21,3 +21,8 @@ __pycache__/
 *.pyc
 .venv/
 target/
+
+# Local Wiki Knowledge Graph cache & artifacts
+.wiki-cache.json
+wiki-graph.json
+wiki-graph.html

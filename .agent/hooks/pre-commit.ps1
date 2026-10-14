@@ -65,7 +65,7 @@ if (-not (Test-Path $skillsDir)) {
 foreach ($req in $requiredSkills) {
     if ($req -notin $state.active_skills) {
         $folderName = Split-Path $req -Leaf
-        $globalSkills = @('code-review', 'doc-sync', 'error-discipline', 'git-release', 'incident-triaging', 'security-auditor', 'test-discipline', 'workspace-initializer')
+        $globalSkills = @('code-review', 'doc-sync', 'error-discipline', 'git-release', 'incident-triaging', 'security-auditor', 'test-discipline', 'workspace-initializer', 'repo-wiki')
         if ($folderName -in $globalSkills -or (Test-Path (Join-Path $repoRoot ".agent\.registry\globals\$folderName"))) { continue }
 
         $linkPath = Join-Path $skillsDir $folderName
@@ -106,6 +106,21 @@ if ($driftDetected) {
     $state | ConvertTo-Json -Depth 4 | Set-Content -Path $activeSkillsPath -Encoding utf8
     Write-Host "Antigravity Sync: Active skills updated. Staging tracker..." -ForegroundColor Green
     git add $activeSkillsPath
+}
+
+# 3. Validate repository wiki knowledge graph if present
+$wikiEnginePath = ".agent\.registry\scripts\wiki-engine.py"
+if (-not (Test-Path $wikiEnginePath) -and (Test-Path "..\..\agent-skills-vault\scripts\wiki-engine.py")) {
+    $wikiEnginePath = "..\..\agent-skills-vault\scripts\wiki-engine.py"
+}
+if ((Test-Path "wiki") -and (Test-Path $wikiEnginePath)) {
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        python $wikiEnginePath --root wiki lint
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Pre-commit aborted: Wiki validation failed with broken links or errors."
+            exit 1
+        }
+    }
 }
 
 exit 0
