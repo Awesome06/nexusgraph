@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     falkordb_host: str = Field(default_factory=lambda: os.getenv("FALKORDB_HOST", "localhost"))
     falkordb_port: int = Field(default_factory=lambda: int(os.getenv("FALKORDB_PORT", "6379")))
     falkordb_password: str | None = Field(default_factory=lambda: os.getenv("FALKORDB_PASSWORD") or None)
+    falkordb_username: str | None = Field(default_factory=lambda: os.getenv("FALKORDB_USERNAME") or None)
+    falkordb_ssl: bool = Field(default_factory=lambda: os.getenv("FALKORDB_SSL", "false").lower() in ("true", "1", "yes"))
 
     # Server configuration
     backend_host: str = Field(default_factory=lambda: os.getenv("BACKEND_HOST", "0.0.0.0"))

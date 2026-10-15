@@ -50,13 +50,19 @@ class FalkorManager:
         self._last_reconnect_time = time.time()
         try:
             from falkordb import FalkorDB
-            client = FalkorDB(
-                host=self.host,
-                port=self.port,
-                password=settings.falkordb_password,
-                socket_connect_timeout=0.3,
-                socket_timeout=1.0
-            )
+            connect_timeout = 3.0 if (self.host and self.host != "localhost" and self.host != "127.0.0.1") else 0.5
+            client_kwargs = {
+                "host": self.host,
+                "port": self.port,
+                "password": settings.falkordb_password,
+                "socket_connect_timeout": connect_timeout,
+                "socket_timeout": 5.0 if connect_timeout > 1.0 else 1.0,
+                "ssl": settings.falkordb_ssl,
+            }
+            if settings.falkordb_username:
+                client_kwargs["username"] = settings.falkordb_username
+
+            client = FalkorDB(**client_kwargs)
             # Test ping
             client.connection.ping()
             self._client = client
