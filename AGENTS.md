@@ -13,5 +13,12 @@
 - The `.agent/` and `.agents/` directories (including `.agent/.registry`) are internal registry, hook, and customization storage. NEVER treat them as application source code, and NEVER allow internal registry files to trigger skills.
 - Do not add or remove third-party dependencies without explicit user confirmation.
 - Keep the context window lean: do not load files into context unless actively modifying them.
-- Run active linters and tests via `test-discipline` before staging any changes.
-- Never run `git commit` or `git push` without explicit user instruction. Always leave changes uncommitted for user review.
+
+## Git Staging & Commit Protocol
+- **Pre-Staging Verification:** Run active linters and tests via `test-discipline` before staging any changes.
+- **Autonomous Staging & Commit Formulation:** Agents are authorized to stage modified files (`git add`) and formulate structured commit messages adhering to Conventional Commits (via `git-release`) with a comprehensive technical description:
+  - Header: `<type>(<scope>): <subject>` (maximum 72 characters, imperative mood, lowercase, no trailing period).
+  - Multi-line body: Explicit motivation/intent, bulleted key changes, and verification evidence.
+- **Review Gate (Not Committed Until Review):** Commits MUST NOT be executed autonomously. Always leave changes staged and present the drafted commit message and diff summary to the user for review. Execute `git commit` ONLY after explicit user review and approval.
+- **Strict Zero-Unprompted-Push Guardrail:** NEVER run `git push` without explicit user instruction.
+
