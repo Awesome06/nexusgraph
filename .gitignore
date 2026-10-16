@@ -22,6 +22,10 @@ __pycache__/
 *.pyc
 .venv/
 target/
+.env
+*.env
+.env.local
+.env.*.local
 
 # Local Wiki Knowledge Graph cache & artifacts
 .wiki-cache.json

@@ -1,0 +1,44 @@
+services:
+  # Backend API Service (FastAPI + LangGraph + FastMCP)
+  - type: web
+    name: nexusgraph-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    region: oregon
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: LOG_LEVEL
+        value: info
+      - key: SEED_ON_STARTUP
+        value: "true"
+      # Point to your FalkorDB Cloud instance or self-hosted instance
+      - key: FALKORDB_HOST
+        value: localhost
+      - key: FALKORDB_PORT
+        value: "6379"
+      - key: FALKORDB_PASSWORD
+        sync: false
+      - key: FALKORDB_SSL
+        value: "false"
+
+  # Frontend Command Center (Next.js 14 App Router)
+  - type: web
+    name: nexusgraph-frontend
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    plan: free
+    region: oregon
+    envVars:
+      - key: NODE_VERSION
+        value: 20.11.0
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: nexusgraph-backend
+          property: host

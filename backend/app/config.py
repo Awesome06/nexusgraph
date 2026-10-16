@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY") or None)
 
     model_config = {
-        "env_file": ".env",
+        "env_file": (".env", "../.env"),
         "extra": "ignore"
     }
 

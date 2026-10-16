@@ -295,6 +295,18 @@ npm run dev
 # Dashboard available at http://localhost:3001
 ```
 
+### Option C: Zero-Cost Production Cloud Deployment
+
+NexusGraph can be deployed with zero infrastructure costs ($0 budget, no credit card required) across three specialized free tiers:
+
+| Layer | Provider | Free Tier Specification | Configuration File |
+| :--- | :--- | :--- | :--- |
+| **Graph Engine** | [FalkorDB Cloud](https://app.falkordb.cloud/) | 24/7 Persistent Multigraph Engine, TLS/SSL | [`.env.example`](.env.example) |
+| **Backend API** | [Render.com](https://render.com/) | Free Web Service (FastAPI + LangGraph) | [`render.yaml`](render.yaml) |
+| **Frontend UI** | [Vercel](https://vercel.com/) | Global Edge CDN (Next.js 14 App Router) | [`frontend/vercel.json`](frontend/vercel.json) |
+
+For step-by-step setup, TLS configuration, and live verification commands, refer to the [Zero-Cost Production Deployment Guide](wiki/runbooks/zero-cost-deployment.md).
+
 ---
 
 ## Repository Knowledge Graph & Documentation Sync
