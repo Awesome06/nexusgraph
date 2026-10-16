@@ -34,14 +34,14 @@ export default function ScenarioSelector({
 
   return (
     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 shadow-xl backdrop-blur-md space-y-3">
-      {/* 1-Click Demo Scenarios Header */}
+      {/* Operational Scenarios Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
-          <Sparkles className="w-4 h-4 text-amber-400" />
-          <span>1-Click Hackathon Judge Scenarios</span>
+          <Sparkles className="w-4 h-4 text-cyan-400" />
+          <span>Operational Remediation Workflows</span>
         </div>
         <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30">
-          Ready for Instant Evaluation
+          Swarm Scenarios Active
         </span>
       </div>
 

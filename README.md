@@ -3,10 +3,12 @@
 [![FalkorDB Graph Hacks 2026](https://img.shields.io/badge/FalkorDB-Graph_Hacks_2026-blueviolet.svg)](https://www.falkordb.com/)
 [![Track Qualification](https://img.shields.io/badge/Tracks-01%20%7C%2002%20%7C%2003-emerald.svg)]()
 [![Cypher Engine](https://img.shields.io/badge/Cypher-GraphBLAS-cyan.svg)]()
-[![Test Suite](https://img.shields.io/badge/Tests-8%2F8%20Passed-brightgreen.svg)]()
+[![Test Suite](https://img.shields.io/badge/Tests-10%2F10%20Passed-brightgreen.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **NexusGraph** is an autonomous multi-agent engineering swarm powered natively by **FalkorDB** as its active context, shared coordination blackboard, and procedural memory layer. Built for **FalkorDB Graph Hacks 2026**, it resolves production incidents by combining multi-hop blast-radius graph traversals, organizational decision provenance (ADRs), and cross-session incident memory to isolate and roll back breaking changes in seconds.
+
+[Track Qualification](#competition-track-qualification) | [System Architecture](#system-architecture--multigraph-topology) | [FastMCP Cypher Tools](#cypher-query-contracts--fastmcp-tool-suite) | [Benchmarks](#performance--quality-benchmarks) | [Architecture Console](#falkordb-architecture-console--diagnostic-apis) | [Quickstart](#quick-start--deployment)
 
 ---
 
@@ -14,11 +16,11 @@
 
 NexusGraph aligns natively with all three Graph Hacks competition tracks simultaneously:
 
-| Track | Theme | Autonomous Implementation | FalkorDB Cypher & Architecture Driver |
+| Track | Theme | Autonomous Implementation & FalkorDB Driver | Source Verification |
 | :--- | :--- | :--- | :--- |
-| **Track 01** | **Agents That Act on Connected Data** | Autonomous blast-radius calculation, graph centrality bottleneck detection, and automated rollback execution via FastMCP tools. | Variable-length path traversal (`<-[:DEPENDS_ON*1..4]-`), in-degree centrality (`count(dependent)`), and graph state mutations (`SET s.status = 'HEALTHY'`). |
-| **Track 02** | **Agent Memory & Coordination** | Three specialized agents (`Recon`, `Historian`, `Executor`) coordinate through a shared FalkorDB Blackboard using per-session multi-tenant graph isolation. | FalkorDB Multigraph isolation (`db.select_graph()`), Blackboard graphs (`blackboard_<session_id>`), and cross-session episodic memory (`procedural_memory`). |
-| **Track 03** | **Company Brain** | Connects Engineers, Teams, Services, Commits, and Architecture Decision Records (ADRs) so every system decision traces to its human owner and historical rationale. | Native Cypher `shortestPath((p:Person)-[*..6]-(s:Service))`, provenance lineage (`(Person)-[:DECIDED]->(ADR)-[:GOVERNS]->(Service)`), and ADR violation detection. |
+| **Track 01** | **Agents That Act on Connected Data** | Autonomous blast-radius calculation, graph centrality bottleneck detection, and automated rollback execution via FastMCP tools. Variable-length path traversal (`<-[:DEPENDS_ON*1..4]-`), in-degree centrality (`count(dependent)`), and graph state mutations (`SET s.status = 'HEALTHY'`). | [`graph_tools.py`](backend/app/mcp_server/graph_tools.py)<br/>[`recon_agent.py`](backend/app/agents/recon_agent.py) |
+| **Track 02** | **Agent Memory & Coordination** | Three specialized agents (`Recon`, `Historian`, `Executor`) coordinate through a shared FalkorDB Blackboard using per-session multi-tenant graph isolation (`db.select_graph()`), Blackboard graphs (`blackboard_<session_id>`), and cross-session episodic memory (`procedural_memory`). | [`falkor_client.py`](backend/app/db/falkor_client.py)<br/>[`orchestrator.py`](backend/app/agents/orchestrator.py) |
+| **Track 03** | **Company Brain** | Connects Engineers, Teams, Services, Commits, and Architecture Decision Records (ADRs) so every system decision traces to its human owner and historical rationale via native Cypher `shortestPath((p:Person)-[*..6]-(s:Service))` and ADR violation detection. | [`seed.py`](backend/app/db/seed.py)<br/>[`historian_agent.py`](backend/app/agents/historian_agent.py) |
 
 ---
 
@@ -70,12 +72,12 @@ graph TD
 
 ---
 
-## Graph Necessity: Architectural Justification
+## Graph Necessity: Architectural Justification & Algorithmic Complexity
 
 > [!IMPORTANT]
 > **FalkorDB Graph Hacks Rule 3 Compliance:** NexusGraph fundamentally relies on graph-native data modeling. Removing FalkorDB invalidates core system functionality:
 > 1. **Inter-Agent Coordination:** Agents communicate exclusively by writing and querying `(:Task)-[:ASSIGNED_TO]->(:Finding)-[:HANDOFF_TO]->(:Task)` nodes inside FalkorDB's per-session blackboard.
-> 2. **Blast Radius Analysis:** Requires cyclic and variable-length path traversals through dependent microservices (`*1..4`), avoiding the latency overhead of recursive relational joins.
+> 2. **Variable-Length Path Complexity:** Finding a 4-hop blast radius in relational SQL requires recursive Common Table Expressions (CTEs) executing exponential repeated self-joins ($\mathcal{O}(b^d)$ with branching factor $b$ and depth $d$). FalkorDB executes traversals via GraphBLAS sparse adjacency matrix multiplication ($\mathcal{O}(k \cdot \text{nnz}(A))$ where $\text{nnz}$ is non-zero edge entries), bounding execution to sub-15ms.
 > 3. **ADR Governance & Policy Enforcement:** Traverses hyper-connected paths between commits, authors, services, and architecture decisions (`(Commit)-[:DEPLOYED_TO]->(Service)<-[:GOVERNS]-(ADR)`).
 > 4. **Shortest Ownership Attribution:** Calculates organizational accountability chains up to 6 hops using Cypher's native `shortestPath((p:Person)-[*..6]-(s:Service))`.
 > 5. **Episodic Learning:** Multi-session runbook recall is weighted by confidence attributes on graph relationships (`[:RESOLVED_BY {confidence, times_used}]`).
@@ -89,7 +91,7 @@ graph TD
 | **Blast Radius Traversal Latency** | < 25ms | **~11.4ms** (GraphBLAS Sparse Matrix) | Automated test suite / SSE Cypher trace |
 | **Swarm End-to-End Remediation** | < 5.0s | **~3.2s** (Recon -> Historian -> Executor) | LangGraph pipeline execution benchmark |
 | **In-Degree Centrality Query** | < 20ms | **~8.9ms** | Cypher `count(dependent)` execution |
-| **Automated Test Coverage** | 100% Pass | **8/8 Passed (100%)** | `pytest backend/tests -v` |
+| **Automated Test Coverage** | 100% Pass | **10/10 Passed (100%)** | `pytest backend/tests -v` |
 | **Wiki Link Integrity** | 0 Broken Links | **0 Broken Links (12 notes verified)** | `.agent/wiki.ps1 lint` |
 
 ---
@@ -227,6 +229,35 @@ The split-screen command center provides interactive operational workflows demon
 
 ---
 
+## FalkorDB Architecture Console & Diagnostic APIs
+
+NexusGraph provides interactive developer tools in the command center (via the **FalkorDB Console** button in the header) alongside public diagnostic endpoints:
+
+### 1. In-Browser Architecture Console
+- **GraphBLAS vs. SQL Benchmark:** Executes variable-length traversals up to 4 hops in real time, plotting latency and empirical speedup factors.
+- **openCypher REPL:** Interactive query scratchpad with pre-loaded queries against `org_brain`, `procedural_memory`, and session blackboards.
+- **Chaos Injection:** Triggers random microservice failures (thread starvation, latency degradation) to evaluate swarm diagnosis on unscripted anomalies.
+
+### 2. Diagnostic HTTP Endpoints
+- **Run GraphBLAS Benchmark:**
+  ```bash
+  curl -s http://localhost:8000/api/benchmark/graph-vs-sql?target_service=ledger-db&max_hops=4
+  ```
+- **Inject Controlled Microservice Chaos:**
+  ```bash
+  curl -X POST http://localhost:8000/api/chaos/inject -H "Content-Type: application/json" -d '{"target_service": "auth-service"}'
+  ```
+- **Execute Ad-Hoc Cypher:**
+  ```bash
+  curl -X POST http://localhost:8000/api/cypher/query -H "Content-Type: application/json" -d '{"graph_name": "org_brain", "query": "MATCH (s:Service) RETURN s.name, s.status"}'
+  ```
+- **Ingest OpenTelemetry Distributed Trace Spans:**
+  ```bash
+  curl -X POST http://localhost:8000/api/telemetry/spans -H "Content-Type: application/json" -d '[{"caller_service": "api-gateway", "callee_service": "payment-engine", "duration_ms": 140}]'
+  ```
+
+---
+
 ## Quick Start & Deployment
 
 ### Option A: Docker Compose Deployment (Recommended)
@@ -305,6 +336,8 @@ nexusgraph/
 │   │   │   ├── executor_agent.py   # Remediation planner & graph state mutator (Track 01 & 02)
 │   │   │   └── orchestrator.py     # Swarm pipeline coordinator
 │   │   ├── db/
+│   │   │   ├── benchmark.py        # FalkorDB GraphBLAS vs SQL traversal benchmark engine
+│   │   │   ├── chaos.py            # Dynamic microservice failure injection & recovery
 │   │   │   ├── falkor_client.py    # FalkorDB multigraph manager (org_brain, blackboard, procedural_memory)
 │   │   │   ├── schema.py           # Cypher node & edge label schemas
 │   │   │   └── seed.py             # Deterministic synthetic dataset initializer
@@ -314,7 +347,8 @@ nexusgraph/
 │   │   ├── config.py               # Environment configuration
 │   │   └── main.py                 # FastAPI endpoints & SSE streaming pipeline
 │   ├── tests/
-│   │   └── test_swarm.py           # Comprehensive pytest suite (8/8 passed)
+│   │   ├── test_benchmark_and_chaos.py  # Benchmark & chaos engineering validation
+│   │   └── test_swarm.py                # Multi-agent swarm & FastMCP tool integration
 │   ├── Dockerfile
 │   ├── pyproject.toml
 │   └── requirements.txt
@@ -323,6 +357,7 @@ nexusgraph/
 │   │   ├── app/                    # Next.js 14 App Router layout & command center
 │   │   └── components/
 │   │       ├── AgentTracePanel.tsx # Real-time SSE Cypher execution & agent handoff stream
+│   │       ├── CypherConsole.tsx   # Benchmark viewer, openCypher REPL & chaos modal
 │   │       ├── GraphCanvas.tsx     # Force-directed dynamic topology visualization
 │   │       ├── MemoryInspector.tsx # Procedural memory & runbook confidence inspector
 │   │       └── ScenarioSelector.tsx# Operational scenario selection
@@ -336,6 +371,7 @@ nexusgraph/
 │   └── index.md                    # Root entrypoint
 ├── docker-compose.yml              # Full-stack container orchestration
 ├── AGENTS.md                       # Antigravity agent directives & governance
+├── LICENSE                         # MIT License
 └── README.md                       # System documentation
 ```
 
@@ -343,7 +379,7 @@ nexusgraph/
 
 ## Automated Verification & Test Suite
 
-NexusGraph includes end-to-end tests verifying the multigraph schema, all 6 MCP Cypher tools, and the 3-agent LangGraph pipeline:
+NexusGraph includes end-to-end tests verifying the multigraph schema, all 6 MCP Cypher tools, benchmark calculations, chaos injection, and the 3-agent LangGraph pipeline:
 
 ```bash
 cd backend
@@ -352,16 +388,18 @@ pytest tests -v
 
 Execution output:
 ```text
-backend\tests\test_swarm.py::test_seed_populates_org_brain PASSED        [ 12%]
-backend\tests\test_swarm.py::test_tool_trace_blast_radius PASSED         [ 25%]
-backend\tests\test_swarm.py::test_tool_find_breaking_commit_and_owner PASSED [ 37%]
-backend\tests\test_swarm.py::test_tool_find_shortest_ownership_path PASSED [ 50%]
-backend\tests\test_swarm.py::test_tool_compute_critical_bottlenecks PASSED [ 62%]
-backend\tests\test_swarm.py::test_tool_recall_and_update_procedural_memory PASSED [ 75%]
-backend\tests\test_swarm.py::test_tool_mutate_graph_action PASSED        [ 87%]
+backend\tests\test_benchmark_and_chaos.py::test_graph_vs_sql_benchmark PASSED [ 10%]
+backend\tests\test_benchmark_and_chaos.py::test_chaos_injection_and_reset PASSED [ 20%]
+backend\tests\test_swarm.py::test_seed_populates_org_brain PASSED        [ 30%]
+backend\tests\test_swarm.py::test_tool_trace_blast_radius PASSED         [ 40%]
+backend\tests\test_swarm.py::test_tool_find_breaking_commit_and_owner PASSED [ 50%]
+backend\tests\test_swarm.py::test_tool_find_shortest_ownership_path PASSED [ 60%]
+backend\tests\test_swarm.py::test_tool_compute_critical_bottlenecks PASSED [ 70%]
+backend\tests\test_swarm.py::test_tool_recall_and_update_procedural_memory PASSED [ 80%]
+backend\tests\test_swarm.py::test_tool_mutate_graph_action PASSED        [ 90%]
 backend\tests\test_swarm.py::test_full_swarm_pipeline_execution PASSED   [100%]
 
-============================= 8 passed in 10.11s ==============================
+============================= 10 passed in 11.44s =============================
 ```
 
 ---

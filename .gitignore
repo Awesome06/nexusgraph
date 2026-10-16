@@ -17,6 +17,7 @@ desktop.ini
 node_modules/
 dist/
 build/
+.next/
 __pycache__/
 *.pyc
 .venv/

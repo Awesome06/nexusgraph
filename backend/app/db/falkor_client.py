@@ -507,16 +507,21 @@ class EmulatedGraphWrapper:
                 ])
             return results
 
-        # Tool 6: mutate_graph_action
-        if "mutate_graph_action" in cypher or "ProposedAction" in cypher_clean or "SET s.status" in cypher_clean:
+        # Mutation Handling (SET properties / mutate_graph_action)
+        if "mutate_graph_action" in cypher or "ProposedAction" in cypher_clean or "SET s." in cypher_clean or "SET s.status" in cypher_clean:
             svc_name = params.get("service_name", "payment-engine")
             action = params.get("action", "rollback")
-            # Update service status
             svc_node = next((n for n in self.storage["nodes"].values() if n.properties.get("name") == svc_name), None)
             if svc_node:
-                svc_node.properties["status"] = "HEALTHY"
-            
-            # Create ProposedAction node in blackboard
+                if "DEGRADED" in cypher:
+                    svc_node.properties["status"] = "DEGRADED"
+                elif "HEALTHY" in cypher:
+                    svc_node.properties["status"] = "HEALTHY"
+                if "p99" in params:
+                    svc_node.properties["latency_p99"] = params["p99"]
+                if "err_rate" in params:
+                    svc_node.properties["error_rate"] = params["err_rate"]
+
             pa_node = EmulatedNode(
                 len(self.storage["nodes"]) + 100,
                 ["ProposedAction"],
@@ -530,6 +535,16 @@ class EmulatedGraphWrapper:
             )
             self.storage["nodes"][pa_node.id] = pa_node
             return [[pa_node, svc_node]]
+
+        # Single service matching by name
+        if "MATCH (s:Service {name:" in cypher_clean:
+            import re
+            m = re.search(r"name:\s*['\"]([^'\"]+)['\"]", cypher_clean)
+            target_name = m.group(1) if m else params.get("service_name")
+            target_node = next((n for n in self.storage["nodes"].values() if n.properties.get("name") == target_name), None)
+            if target_node:
+                return [[target_node]]
+            return []
 
         # Default fallback: return all nodes
         return [[n] for n in self.storage["nodes"].values()]

@@ -8,7 +8,7 @@
                           "db/sql-redis",
                           "arch/c4-design",
                           "langs/python-ml",
-                          "frameworks/fastapi",
-                          "langs/async-python"
+                          "langs/async-python",
+                          "arch/readme-craft"
                       ]
 }

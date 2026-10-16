@@ -12,6 +12,8 @@ import {
   ArrowRight,
   ChevronRight,
   Code2,
+  Copy,
+  Check,
 } from "lucide-react";
 
 export interface CypherTrace {
@@ -92,6 +94,14 @@ export default function AgentTracePanel({
   activeStage,
 }: AgentTracePanelProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopyDispatch = (text: string) => {
+    const dispatchCard = `🚨 *NexusGraph Incident Remediation Dispatch*\n\n${text}\n\n*Verified by FalkorDB Multigraph Engine* (org_brain & procedural_memory)`;
+    navigator.clipboard.writeText(dispatchCard);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // Auto-scroll as events stream in
   useEffect(() => {
@@ -230,9 +240,19 @@ export default function AgentTracePanel({
                 {/* Final Explanation Display */}
                 {evt.is_final && evt.final_answer && (
                   <div className="mt-3 p-3.5 rounded-xl bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/50 shadow-lg">
-                    <div className="flex items-center gap-2 text-emerald-400 font-bold mb-2">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Autonomous Incident Remediation Report</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 text-emerald-400 font-bold">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Autonomous Incident Remediation Report</span>
+                      </div>
+                      <button
+                        onClick={() => handleCopyDispatch(evt.final_answer || "")}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-900/60 hover:bg-emerald-800/80 border border-emerald-500/40 text-[10px] text-emerald-200 transition-all font-mono"
+                        title="Copy formatted post-mortem for Slack or PagerDuty"
+                      >
+                        {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copied ? "Copied!" : "Copy Dispatch (Slack)"}</span>
+                      </button>
                     </div>
                     <div className="text-slate-200 font-sans text-xs leading-relaxed whitespace-pre-line space-y-2">
                       {evt.final_answer}

@@ -3,8 +3,11 @@
 Provides:
 - Server-Sent Events (SSE) streaming of multi-agent reasoning & Cypher traces
 - Multigraph visualizer endpoints (org_brain, procedural_memory, blackboard)
-- Direct FastMCP tool invocation endpoints
-- 1-Click demo scenarios for judges
+- FastMCP tool invocation endpoints
+- GraphBLAS vs SQL traversal benchmark engine
+- Chaos engineering failure injection and reset endpoints
+- Ad-hoc openCypher query scratchpad execution
+- OpenTelemetry distributed trace span ingestion
 """
 
 import json
@@ -27,6 +30,8 @@ from app.agents.orchestrator import (
 )
 from app.mcp_server import graph_tools
 from app.models.payloads import InvestigateRequest, SubgraphPayload
+from app.db.benchmark import run_graph_vs_sql_benchmark
+from app.db.chaos import inject_failure, reset_chaos
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
@@ -196,3 +201,81 @@ def execute_mcp_tool(tool_name: str, payload: Dict[str, Any] = {}):
         raise HTTPException(status_code=404, detail=f"Unknown tool: {tool_name}. Available: {list(tools_map.keys())}")
 
     return tools_map[tool_name]()
+
+
+@app.get("/api/benchmark/graph-vs-sql")
+def get_graph_vs_sql_benchmark(
+    target_service: str = "ledger-db",
+    max_hops: int = 4
+):
+    """Benchmarks variable-length path traversal in FalkorDB vs relational recursive CTE joins."""
+    manager = get_falkor_manager()
+    return run_graph_vs_sql_benchmark(
+        target_service=target_service,
+        max_hops=max_hops,
+        manager=manager
+    )
+
+
+@app.post("/api/chaos/inject")
+def trigger_chaos_injection(payload: Dict[str, Any] = {}):
+    """Injects an on-demand microservice failure into org_brain to evaluate dynamic swarm remediation."""
+    manager = get_falkor_manager()
+    target_service = payload.get("target_service")
+    return inject_failure(target_service=target_service, manager=manager)
+
+
+@app.post("/api/chaos/reset")
+def trigger_chaos_reset():
+    """Resets all graphs to their baseline healthy topology."""
+    manager = get_falkor_manager()
+    return reset_chaos(manager=manager)
+
+
+@app.post("/api/cypher/query")
+def execute_custom_cypher(payload: Dict[str, Any]):
+    """Executes an arbitrary openCypher query directly against a selected FalkorDB namespace."""
+    graph_name = payload.get("graph_name", "org_brain")
+    cypher = payload.get("query", "").strip()
+    if not cypher:
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+    
+    manager = get_falkor_manager()
+    try:
+        records, elapsed_ms = manager.query(graph_name, cypher)
+        subgraph = manager.extract_subgraph(records, cypher=cypher)
+        return {
+            "graph_name": graph_name,
+            "cypher_query": cypher,
+            "execution_time_ms": round(elapsed_ms, 2),
+            "record_count": len(records),
+            "subgraph": subgraph
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cypher execution error: {exc}")
+
+
+@app.post("/api/telemetry/spans")
+def ingest_telemetry_spans(spans: List[Dict[str, Any]]):
+    """Ingests OpenTelemetry distributed trace spans to update service latency in org_brain."""
+    manager = get_falkor_manager()
+    updated_edges = 0
+    for span in spans:
+        caller = span.get("caller_service") or span.get("parent_service")
+        callee = span.get("callee_service") or span.get("service_name")
+        duration = span.get("duration_ms", 120)
+        if caller and callee and caller != callee:
+            cypher = (
+                "MATCH (c:Service {name: $caller})-[r:DEPENDS_ON]->(target:Service {name: $callee}) "
+                "SET r.p99_latency_ms = $duration, r.last_span_at = timestamp() "
+                "RETURN count(r) AS updated"
+            )
+            manager.query("org_brain", cypher, {"caller": caller, "callee": callee, "duration": duration})
+            updated_edges += 1
+            
+    return {
+        "status": "success",
+        "spans_processed": len(spans),
+        "edges_updated": updated_edges
+    }
+

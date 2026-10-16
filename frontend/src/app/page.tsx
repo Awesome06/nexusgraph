@@ -5,6 +5,7 @@ import MemoryInspector from "@/components/MemoryInspector";
 import ScenarioSelector, { Scenario } from "@/components/ScenarioSelector";
 import AgentTracePanel, { AgentStepEvent } from "@/components/AgentTracePanel";
 import GraphCanvas, { GraphNode, GraphEdge } from "@/components/GraphCanvas";
+import CypherConsole from "@/components/CypherConsole";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -47,6 +48,7 @@ export default function NexusGraphDashboard() {
   const [isSeeding, setIsSeeding] = useState<boolean>(false);
   const [falkorConnected, setFalkorConnected] = useState<boolean>(true);
   const [isLoadingGraph, setIsLoadingGraph] = useState<boolean>(false);
+  const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(false);
 
   // Fetch full graph topology for the active namespace
   const fetchGraphTopology = useCallback(async (graphName: string) => {
@@ -247,6 +249,7 @@ export default function NexusGraphDashboard() {
         activeGraph={activeGraph}
         onSelectGraph={handleSelectGraph}
         onResetSeed={handleResetSeed}
+        onOpenConsole={() => setIsConsoleOpen(true)}
         isSeeding={isSeeding}
         nodeCount={nodes.length}
         edgeCount={edges.length}
@@ -284,6 +287,14 @@ export default function NexusGraphDashboard() {
           />
         </div>
       </div>
+
+      {/* 3. FalkorDB Architecture Console (Benchmarks, openCypher REPL, Chaos) */}
+      <CypherConsole
+        isOpen={isConsoleOpen}
+        onClose={() => setIsConsoleOpen(false)}
+        activeGraphName={activeGraph}
+        onRefreshGraph={() => fetchGraphTopology(activeGraph)}
+      />
     </div>
   );
 }

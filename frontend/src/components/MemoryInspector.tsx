@@ -1,12 +1,13 @@
 "use client";
 
 import React from "react";
-import { Database, Network, BrainCircuit, History, RotateCcw, ShieldCheck } from "lucide-react";
+import { Database, Network, BrainCircuit, History, RotateCcw, ShieldCheck, Terminal } from "lucide-react";
 
 interface MemoryInspectorProps {
   activeGraph: string;
   onSelectGraph: (graphName: string) => void;
   onResetSeed: () => void;
+  onOpenConsole?: () => void;
   isSeeding: boolean;
   nodeCount: number;
   edgeCount: number;
@@ -17,6 +18,7 @@ export default function MemoryInspector({
   activeGraph,
   onSelectGraph,
   onResetSeed,
+  onOpenConsole,
   isSeeding,
   nodeCount,
   edgeCount,
@@ -104,8 +106,19 @@ export default function MemoryInspector({
         })}
       </div>
 
-      {/* Right: Reseed & Stats */}
+      {/* Right: Console, Reseed & Stats */}
       <div className="flex items-center gap-2">
+        {onOpenConsole && (
+          <button
+            onClick={onOpenConsole}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-500/50 text-xs font-mono text-cyan-300 hover:text-cyan-100 transition-all shadow-md"
+            title="Open FalkorDB Architecture Console (Benchmarks & openCypher REPL)"
+          >
+            <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+            <span>FalkorDB Console</span>
+          </button>
+        )}
+
         <button
           onClick={onResetSeed}
           disabled={isSeeding}
