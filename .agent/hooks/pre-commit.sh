@@ -18,6 +18,16 @@ mkdir -p "$SKILLS_DIR"
 # Excludes .agent, .agents, .git, node_modules, vendor, .venv
 MATCHED_SKILLS=""
 
+# Preload manifest contents for semantic keyword scanning
+MANIFEST_TEXT=""
+MANIFEST_FILES=$(find . -maxdepth 4 -type f \( -name "requirements*.txt" -o -name "pyproject.toml" -o -name "Pipfile" -o -name "package.json" -o -name "go.mod" -o -name "Cargo.toml" -o -name "uv.lock" \) \
+    -not -path '*/.*' -not -path '*/node_modules*' -not -path '*/vendor*' -not -path '*/.venv*' 2>/dev/null)
+for mf in $MANIFEST_FILES; do
+    if [ -f "$mf" ]; then
+        MANIFEST_TEXT="$MANIFEST_TEXT $(cat "$mf" 2>/dev/null)"
+    fi
+done
+
 scan_trigger() {
     trigger="$1"
     # Never match customization roots or internal machinery
@@ -25,15 +35,14 @@ scan_trigger() {
         .*|agents*|workflows*|tests*|scripts*) return 1 ;;
     esac
 
-    # 1. Root check
+    # 1. Direct root check
     if [ -e "$trigger" ]; then
         return 0
     fi
 
-    # 2. Nested directory check (depth 4)
+    # 2. Directory trigger check
     case "$trigger" in
         */)
-            # Directory trigger
             dir_name=$(basename "$trigger")
             if find . -maxdepth 4 -type d -name "$dir_name" \
                 -not -path '*/.*' -not -path '*/node_modules*' -not -path '*/vendor*' -not -path '*/.venv*' \
@@ -41,10 +50,21 @@ scan_trigger() {
                 return 0
             fi
             ;;
-        *)
-            # File trigger
+        *.*)
+            # 3. File trigger check
             file_name=$(basename "$trigger")
             if find . -maxdepth 4 -type f -name "$file_name" \
+                -not -path '*/.*' -not -path '*/node_modules*' -not -path '*/vendor*' -not -path '*/.venv*' \
+                2>/dev/null | grep -q .; then
+                return 0
+            fi
+            ;;
+        *)
+            # 4. Semantic manifest & stem check
+            if echo "$MANIFEST_TEXT" | grep -iq "[^a-zA-Z0-9_-]${trigger}[^a-zA-Z0-9_-]"; then
+                return 0
+            fi
+            if find . -maxdepth 4 -name "*$trigger*" \
                 -not -path '*/.*' -not -path '*/node_modules*' -not -path '*/vendor*' -not -path '*/.venv*' \
                 2>/dev/null | grep -q .; then
                 return 0
@@ -56,7 +76,90 @@ scan_trigger() {
 
 # Parse skill-map.json using jq or python
 parse_and_link() {
-    if command -v jq >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
+        PY_CMD=$(command -v python3 || command -v python)
+        MATCHED_SKILLS=$("$PY_CMD" -c "
+import json, os, sys, re
+
+with open('$REGISTRY_MAP', 'r', encoding='utf-8') as f:
+    mapping = json.load(f)
+
+# Collect manifest content
+manifest_blobs = []
+for root, dirs, files in os.walk('.', topdown=True):
+    dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', 'vendor', '.venv')]
+    depth = root.count(os.sep)
+    if depth >= 4:
+        continue
+    for fn in files:
+        if fn in ('pyproject.toml', 'Pipfile', 'package.json', 'go.mod', 'Cargo.toml', 'uv.lock') or fn.startswith('requirements'):
+            try:
+                with open(os.path.join(root, fn), 'r', encoding='utf-8', errors='ignore') as mf:
+                    manifest_blobs.append(mf.read())
+            except Exception:
+                pass
+manifest_text = '\n'.join(manifest_blobs)
+
+matched = set()
+for trig, skills in mapping.items():
+    if trig.startswith('.') or trig.startswith('agents') or trig.startswith('workflows'):
+        continue
+
+    # 1. Root check
+    if os.path.exists(trig):
+        matched.update(skills)
+        continue
+
+    trig_clean = trig.rstrip('/')
+    trig_base = os.path.basename(trig_clean)
+
+    # 2. Directory check
+    if trig.endswith('/'):
+        found = False
+        for root, dirs, _ in os.walk('.', topdown=True):
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', 'vendor', '.venv')]
+            if root.count(os.sep) >= 4:
+                continue
+            if trig_base in dirs:
+                found = True
+                break
+        if found:
+            matched.update(skills)
+            continue
+
+    # 3. File check
+    elif '.' in trig_base:
+        found = False
+        for root, dirs, files in os.walk('.', topdown=True):
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', 'vendor', '.venv')]
+            if root.count(os.sep) >= 4:
+                continue
+            if trig_base in files:
+                found = True
+                break
+        if found:
+            matched.update(skills)
+            continue
+
+    # 4. Semantic manifest check & stem fallback
+    else:
+        if re.search(r'\b' + re.escape(trig) + r'\b', manifest_text, re.IGNORECASE):
+            matched.update(skills)
+            continue
+        found = False
+        for root, dirs, files in os.walk('.', topdown=True):
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', 'vendor', '.venv')]
+            if root.count(os.sep) >= 4:
+                continue
+            if any(trig in d for d in dirs) or any(trig in f for f in files):
+                found = True
+                break
+        if found:
+            matched.update(skills)
+
+print(' '.join(sorted(matched)))
+")
+    elif command -v jq >/dev/null 2>&1; then
         TRIGGERS=$(jq -r 'keys[]' "$REGISTRY_MAP")
         for trig in $TRIGGERS; do
             if scan_trigger "$trig"; then
@@ -66,38 +169,6 @@ parse_and_link() {
                 done
             fi
         done
-    elif command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
-        PY_CMD=$(command -v python3 || command -v python)
-        MATCHED_SKILLS=$("$PY_CMD" -c "
-import json, os, sys
-with open('$REGISTRY_MAP') as f:
-    mapping = json.load(f)
-matched = set()
-for trig, skills in mapping.items():
-    if trig.startswith('.') or trig.startswith('agents') or trig.startswith('workflows'):
-        continue
-    # Check root
-    if os.path.exists(trig):
-        matched.update(skills)
-        continue
-    # Check nested
-    trig_name = os.path.basename(trig.rstrip('/'))
-    found = False
-    for root, dirs, files in os.walk('.', topdown=True):
-        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', 'vendor', '.venv')]
-        depth = root.count(os.sep)
-        if depth >= 4:
-            continue
-        if trig.endswith('/') and trig_name in dirs:
-            found = True
-            break
-        elif not trig.endswith('/') and trig_name in files:
-            found = True
-            break
-    if found:
-        matched.update(skills)
-print(' '.join(sorted(matched)))
-")
     fi
 }
 
@@ -174,8 +245,8 @@ fi
 
 # 3. Validate repository wiki knowledge graph if present
 WIKI_ENGINE=".agent/.registry/scripts/wiki-engine.py"
-if [ ! -f "$WIKI_ENGINE" ] && [ -f "../../agent-skills-vault/scripts/wiki-engine.py" ]; then
-    WIKI_ENGINE="../../agent-skills-vault/scripts/wiki-engine.py"
+if [ ! -f "$WIKI_ENGINE" ] && [ -f "../agent-skills-vault/scripts/wiki-engine.py" ]; then
+    WIKI_ENGINE="../agent-skills-vault/scripts/wiki-engine.py"
 fi
 if [ -d "wiki" ] && [ -f "$WIKI_ENGINE" ]; then
     if command -v python3 >/dev/null 2>&1; then

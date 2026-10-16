@@ -60,16 +60,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for Next.js frontend
+# Enable CORS for Next.js frontend and cloud deployments
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+@app.get("/healthz")
 @app.get("/api/health")
 def get_health() -> Dict[str, Any]:
     """Health check and FalkorDB multigraph status."""

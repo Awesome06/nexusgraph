@@ -92,7 +92,7 @@ graph TD
 | **Swarm End-to-End Remediation** | < 5.0s | **~3.2s** (Recon -> Historian -> Executor) | LangGraph pipeline execution benchmark |
 | **In-Degree Centrality Query** | < 20ms | **~8.9ms** | Cypher `count(dependent)` execution |
 | **Automated Test Coverage** | 100% Pass | **10/10 Passed (100%)** | `pytest backend/tests -v` |
-| **Wiki Link Integrity** | 0 Broken Links | **0 Broken Links (12 notes verified)** | `.agent/wiki.ps1 lint` |
+| **Wiki Link Integrity** | 0 Broken Links | **0 Broken Links (13 notes verified)** | `.agent/wiki.ps1 lint` |
 
 ---
 
@@ -329,16 +329,51 @@ powershell -File .\.agent\wiki.ps1 --root wiki export --format cypher --output w
 
 ---
 
+## Antigravity Agent Governance & Dynamic Skill Linking
+
+NexusGraph interfaces with **Google Antigravity** using the two-tier skill architecture and 3-tier manifest-aware synchronization pipeline ported from [`AgenticTemplate`](https://github.com/Awesome06/AgenticTemplate):
+
+```mermaid
+graph TD
+    A[Codebase Manifests<br/>requirements.txt, package.json, pyproject.toml] --> B[Git Pre-Commit Hook<br/>.agent/hooks/pre-commit.ps1]
+    B --> C[3-Tier Manifest Inspector<br/>Direct Root &middot; Deep Glob &middot; Semantic Keyword]
+    C --> D[Vault Submodule Junctions<br/>.agent/.registry &rarr; .agent/skills/]
+    D --> E[Active Skills Tracker<br/>.agent/.active-skills.json]
+    E --> F[Antigravity AI Agent<br/>Strict Invariant Enforcement via AGENTS.md]
+```
+
+### Active Domain Skills (17 Configured)
+
+| Domain | Active Linked Skill | Invariants Enforced |
+| :--- | :--- | :--- |
+| **PaaS Deployment** | `zero-cost-paas` | Declarative IaC (`render.yaml`, `vercel.json`), health check probes, remote TLS negotiation. |
+| **Next.js 14 App Router** | `nextjs-app-router` | Server Components by default, `error.tsx` recovery boundaries, `loading.tsx` skeletons. |
+| **Canvas Physics** | `canvas-physics` | Numerical velocity clamping, `cancelAnimationFrame` cleanup, inverse affine coordinate transforms. |
+| **Streaming Protocol** | `sse-streaming` | Event-stream framing (`event: <type>\ndata: <json>\n\n`), non-blocking async generator pipes. |
+| **Graph Database** | `graph-falkordb` | Parameterized Cypher queries, bounded path expansions (`[*1..4]`), multigraph tenant isolation. |
+| **Swarm Orchestration** | `agent-orchestration`| `StateGraph`, deterministic state reducers (`Annotated[list, operator.add]`), recursion ceilings. |
+| **Model Context Protocol**| `mcp-server` | FastMCP typed schemas, Pydantic tool arguments, and structured error propagation. |
+| **FastAPI Backend** | `fastapi` | Lifespan context management, non-blocking handlers, typed Pydantic V2 responses. |
+| **Performance Benchmark** | `perf-benchmarking` | GraphBLAS vs SQL recursive CTE latency comparisons, deterministic benchmarking models. |
+| **Schema Evolution** | `schema-evolution` | Node label uniqueness, indexed lookup properties, and migration idempotency. |
+| **Containerization** | `docker` | Multi-stage container builds, non-root user execution, Docker Compose orchestration. |
+| **Architecture Modeling** | `c4-design` | C4 model system context, container topology diagrams, and invariant documentation. |
+
+---
+
 ## Directory Structure
 
 ```text
 nexusgraph/
 ├── .agent/
-│   ├── .registry/             # Centralized agent-skills-vault
-│   ├── hooks/                 # Dynamic skill detection & wiki linting pre-commit hooks
-│   ├── skills/                # Active symlinked domain skills
+│   ├── .registry/             # Git submodule: centralized agent-skills-vault (commit 6b40af8)
+│   ├── hooks/
+│   │   ├── pre-commit.ps1     # 3-tier manifest-aware skill linking & wiki linting (Windows)
+│   │   └── pre-commit.sh      # 3-tier manifest-aware skill linking & wiki linting (POSIX)
+│   ├── skills/                # 17 active symlinked domain skills (gitignored)
 │   ├── wiki.ps1               # Zero-dependency wiki query, lint & Cypher export (Windows)
 │   ├── wiki.sh                # Zero-dependency wiki query, lint & Cypher export (POSIX)
+│   ├── .active-skills.json    # Manifest of currently active workspace skills
 │   └── setup.ps1              # Workspace initialization & hook installer
 ├── backend/
 │   ├── app/
@@ -346,7 +381,7 @@ nexusgraph/
 │   │   │   ├── recon_agent.py      # Blast-radius & topology investigator (Track 01)
 │   │   │   ├── historian_agent.py  # ADR provenance & incident memory recall (Track 02 & 03)
 │   │   │   ├── executor_agent.py   # Remediation planner & graph state mutator (Track 01 & 02)
-│   │   │   └── orchestrator.py     # Swarm pipeline coordinator
+│   │   │   └── orchestrator.py     # Swarm pipeline coordinator with operator.add reducers
 │   │   ├── db/
 │   │   │   ├── benchmark.py        # FalkorDB GraphBLAS vs SQL traversal benchmark engine
 │   │   │   ├── chaos.py            # Dynamic microservice failure injection & recovery
@@ -356,8 +391,8 @@ nexusgraph/
 │   │   ├── mcp_server/
 │   │   │   └── graph_tools.py      # 6 FastMCP tools wrapping openCypher queries
 │   │   ├── models/                 # Pydantic schemas for swarm events & graph diffs
-│   │   ├── config.py               # Environment configuration
-│   │   └── main.py                 # FastAPI endpoints & SSE streaming pipeline
+│   │   ├── config.py               # Dual-path (.env / ../.env) environment configuration
+│   │   └── main.py                 # FastAPI endpoints, /healthz liveness probe & SSE pipeline
 │   ├── tests/
 │   │   ├── test_benchmark_and_chaos.py  # Benchmark & chaos engineering validation
 │   │   └── test_swarm.py                # Multi-agent swarm & FastMCP tool integration
@@ -366,22 +401,29 @@ nexusgraph/
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── app/                    # Next.js 14 App Router layout & command center
+│   │   ├── app/
+│   │   │   ├── layout.tsx          # Server Component root layout with metadata
+│   │   │   ├── page.tsx            # Split-screen command center dashboard
+│   │   │   ├── error.tsx           # App Router resilient error boundary with reset()
+│   │   │   ├── loading.tsx         # Animated radar skeleton suspense fallback
+│   │   │   └── globals.css         # Glassmorphic dark theme tokens
 │   │   └── components/
 │   │       ├── AgentTracePanel.tsx # Real-time SSE Cypher execution & agent handoff stream
 │   │       ├── CypherConsole.tsx   # Benchmark viewer, openCypher REPL & chaos modal
-│   │       ├── GraphCanvas.tsx     # Force-directed dynamic topology visualization
+│   │       ├── GraphCanvas.tsx     # Force-directed dynamic topology canvas with velocity clamping
 │   │       ├── MemoryInspector.tsx # Procedural memory & runbook confidence inspector
 │   │       └── ScenarioSelector.tsx# Operational scenario selection
 │   ├── Dockerfile
-│   └── package.json
+│   ├── package.json
+│   └── vercel.json                 # Vercel Edge configuration
 ├── wiki/                           # Repository Knowledge Graph & ADRs (Markdown)
 │   ├── adr/                        # Architectural Decision Records (001 - 004)
-│   ├── runbooks/                   # Incident remediation runbooks
+│   ├── runbooks/                   # Incident remediation & zero-cost deployment runbooks
 │   ├── specs/                      # Swarm & FastMCP tool specifications
 │   ├── architecture.md             # Multigraph architecture spec
-│   └── index.md                    # Root entrypoint
+│   └── index.md                    # Root entrypoint (13 notes clean)
 ├── docker-compose.yml              # Full-stack container orchestration
+├── render.yaml                     # Render Blueprint for zero-cost cloud backend
 ├── AGENTS.md                       # Antigravity agent directives & governance
 ├── LICENSE                         # MIT License
 └── README.md                       # System documentation

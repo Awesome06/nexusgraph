@@ -6,6 +6,7 @@ services:
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
     plan: free
     region: oregon
     envVars:
@@ -17,7 +18,7 @@ services:
         value: "true"
       # Point to your FalkorDB Cloud instance or self-hosted instance
       - key: FALKORDB_HOST
-        value: localhost
+        sync: false
       - key: FALKORDB_PORT
         value: "6379"
       - key: FALKORDB_PASSWORD

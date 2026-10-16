@@ -37,21 +37,62 @@ if (Test-Path $activeSkillsPath) {
 
 $requiredSkills = @()
 
+# Preload manifest contents across the repository (depth 4) for instant semantic keyword inspection
+$manifests = @()
+$manifestFiles = Get-ChildItem -Path "." -Include "requirements*.txt", "pyproject.toml", "Pipfile", "package.json", "go.mod", "Cargo.toml", "uv.lock" -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '[\\/](\.agents?|\.git|node_modules|vendor|\.venv)[\\/]' }
+
+foreach ($mf in $manifestFiles) {
+    try {
+        $manifests += (Get-Content $mf.FullName -Raw -ErrorAction SilentlyContinue)
+    } catch {}
+}
+$combinedManifestContent = $manifests -join "`n"
+
 # Scan repository signatures directly from map properties (excluding agent customization/registry roots)
 foreach ($prop in $map.psobject.properties) {
-    if ($prop.Name -match '^\.?agents?(/|$)' -or $prop.Name -match '^\.?registry(/|$)') {
+    $trigger = $prop.Name
+    if ($trigger -match '^\.?agents?(/|$)' -or $trigger -match '^\.?registry(/|$)') {
         continue
     }
 
-    if (Test-Path $prop.Name) {
-        $requiredSkills += $prop.Value
-    } elseif (-not $prop.Name.EndsWith("/")) {
-        $matchedFile = Get-ChildItem -Path "." -Filter $prop.Name -Recurse -File -Depth 4 -ErrorAction SilentlyContinue |
+    $matched = $false
+
+    # 1. Direct root check
+    if (Test-Path $trigger) {
+        $matched = $true
+    }
+    # 2. Directory trigger check (ending with '/')
+    elseif ($trigger.EndsWith("/")) {
+        $dirName = $trigger.TrimEnd('/')
+        $foundDir = Get-ChildItem -Path "." -Filter $dirName -Directory -Recurse -Depth 4 -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -notmatch '[\\/](\.agents?|\.git|node_modules|vendor|\.venv)[\\/]' } |
             Select-Object -First 1
-        if ($matchedFile) {
-            $requiredSkills += $prop.Value
+        if ($foundDir) { $matched = $true }
+    }
+    # 3. File trigger check (contains file extension dot, e.g. .py, .json, .ts, .yaml)
+    elseif ($trigger -match '\.[a-zA-Z0-9_-]+$') {
+        $foundFile = Get-ChildItem -Path "." -Filter $trigger -File -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '[\\/](\.agents?|\.git|node_modules|vendor|\.venv)[\\/]' } |
+            Select-Object -First 1
+        if ($foundFile) { $matched = $true }
+    }
+    # 4. Semantic manifest & stem trigger check (plain package/tech identifiers, e.g. fastapi, falkordb, langgraph, next)
+    else {
+        # Check manifest contents for package name / keyword boundary
+        if ($combinedManifestContent -match "(?i)\b$([regex]::Escape($trigger))\b") {
+            $matched = $true
+        } else {
+            # Fallback: check if any file or directory name contains this identifier
+            $foundStem = Get-ChildItem -Path "." -Filter "*$trigger*" -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -notmatch '[\\/](\.agents?|\.git|node_modules|vendor|\.venv)[\\/]' } |
+                Select-Object -First 1
+            if ($foundStem) { $matched = $true }
         }
+    }
+
+    if ($matched) {
+        $requiredSkills += $prop.Value
     }
 }
 $requiredSkills = $requiredSkills | Select-Object -Unique
@@ -110,8 +151,8 @@ if ($driftDetected) {
 
 # 3. Validate repository wiki knowledge graph if present
 $wikiEnginePath = ".agent\.registry\scripts\wiki-engine.py"
-if (-not (Test-Path $wikiEnginePath) -and (Test-Path "..\..\agent-skills-vault\scripts\wiki-engine.py")) {
-    $wikiEnginePath = "..\..\agent-skills-vault\scripts\wiki-engine.py"
+if (-not (Test-Path $wikiEnginePath) -and (Test-Path "..\agent-skills-vault\scripts\wiki-engine.py")) {
+    $wikiEnginePath = "..\agent-skills-vault\scripts\wiki-engine.py"
 }
 if ((Test-Path "wiki") -and (Test-Path $wikiEnginePath)) {
     if (Get-Command python -ErrorAction SilentlyContinue) {

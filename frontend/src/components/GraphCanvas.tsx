@@ -181,15 +181,19 @@ export default function GraphCanvas({
         }
       });
 
-      // Center gravity & velocity dampening
+      // Center gravity & velocity dampening with numerical stability clamping
       const cx = width / 2;
       const cy = height / 2;
+      const maxVelocity = 14;
       simNodes.forEach((n) => {
         if (dragNode?.id !== n.id) {
           const toCenterX = (cx - (n.x || cx)) * 0.003;
           const toCenterY = (cy - (n.y || cy)) * 0.003;
-          n.vx = ((n.vx || 0) + toCenterX) * damping;
-          n.vy = ((n.vy || 0) + toCenterY) * damping;
+          const rawVx = ((n.vx || 0) + toCenterX) * damping;
+          const rawVy = ((n.vy || 0) + toCenterY) * damping;
+
+          n.vx = Math.max(-maxVelocity, Math.min(maxVelocity, rawVx));
+          n.vy = Math.max(-maxVelocity, Math.min(maxVelocity, rawVy));
 
           n.x = (n.x || cx) + (n.vx || 0);
           n.y = (n.y || cy) + (n.vy || 0);

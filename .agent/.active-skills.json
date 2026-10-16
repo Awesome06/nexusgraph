@@ -9,6 +9,16 @@
                           "arch/c4-design",
                           "langs/python-ml",
                           "langs/async-python",
-                          "arch/readme-craft"
+                          "arch/readme-craft",
+                          "frameworks/fastapi",
+                          "ai/agent-orchestration",
+                          "ai/mcp-server",
+                          "db/graph-falkordb",
+                          "ops/perf-benchmarking",
+                          "frameworks/nextjs-app-router",
+                          "domain/canvas-physics",
+                          "ops/zero-cost-paas",
+                          "db/schema-evolution",
+                          "domain/sse-streaming"
                       ]
 }

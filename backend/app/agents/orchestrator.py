@@ -6,7 +6,8 @@ Streams real-time step events via Server-Sent Events (SSE).
 
 import asyncio
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional, TypedDict
+import operator
+from typing import Annotated, Any, AsyncGenerator, Dict, List, Optional, TypedDict
 from app.db.falkor_client import get_falkor_manager, FalkorManager
 from app.agents.recon_agent import run_recon_agent
 from app.agents.historian_agent import run_historian_agent
@@ -51,7 +52,7 @@ class SwarmState(TypedDict):
     recon_data: Optional[Dict[str, Any]]
     historian_data: Optional[Dict[str, Any]]
     executor_data: Optional[Dict[str, Any]]
-    events: List[AgentStepEvent]
+    events: Annotated[List[AgentStepEvent], operator.add]
 
 
 def build_langgraph_pipeline():
@@ -65,14 +66,14 @@ def build_langgraph_pipeline():
                 query=state["query"],
                 target_service=state["target_service"]
             )
-            return {"recon_data": res, "events": state.get("events", []) + res["events"]}
+            return {"recon_data": res, "events": res["events"]}
 
         def historian_node(state: SwarmState) -> Dict[str, Any]:
             res = run_historian_agent(
                 session_id=state["session_id"],
                 target_service=state["target_service"]
             )
-            return {"historian_data": res, "events": state.get("events", []) + res["events"]}
+            return {"historian_data": res, "events": res["events"]}
 
         def executor_node(state: SwarmState) -> Dict[str, Any]:
             res = run_executor_agent(
@@ -80,7 +81,7 @@ def build_langgraph_pipeline():
                 target_service=state["target_service"],
                 historian_data=state.get("historian_data")
             )
-            return {"executor_data": res, "events": state.get("events", []) + res["events"]}
+            return {"executor_data": res, "events": res["events"]}
 
         workflow = StateGraph(SwarmState)
         workflow.add_node("recon", recon_node)
