@@ -85,9 +85,9 @@ graph LR
    - **Root Directory:** Click **Edit** and select `frontend`.
 4. In **Environment Variables**, configure:
    ```env
-   NEXT_PUBLIC_API_URL=https://<your-backend>.onrender.com
+   NEXT_PUBLIC_API_URL=https://nexusgraph-v8n0.onrender.com
    ```
-5. Click **Deploy**. Vercel will build and assign a global production URL (e.g., `https://nexusgraph.vercel.app`).
+5. Click **Deploy**. Vercel builds and assigns the global production URL: [`https://nexusgraph-mu.vercel.app`](https://nexusgraph-mu.vercel.app/).
 
 ---
 
@@ -95,19 +95,28 @@ graph LR
 
 1. **Verify Backend Status:**
    ```bash
-   curl -s https://<your-backend>.onrender.com/api/health
+   curl -s https://nexusgraph-v8n0.onrender.com/api/health
    ```
    Expected response:
    ```json
    {
      "status": "healthy",
      "service": "NexusGraph Swarm Engine",
-     "schema_status": { "native_connected": true }
+     "falkordb_host": "r-6jissuruar.instance-k5i62m7ep.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud:64801",
+     "schema_status": {
+       "engine": "FalkorDB (Native Bolt)",
+       "native_connected": true,
+       "graphs": {
+         "org_brain": "ready",
+         "procedural_memory": "ready",
+         "blackboard": "ready"
+       }
+     }
    }
    ```
 
 2. **Verify Frontend Live Graph:**
-   - Open `https://<your-frontend>.vercel.app` in your browser.
+   - Open [`https://nexusgraph-mu.vercel.app`](https://nexusgraph-mu.vercel.app/) in your browser.
    - Confirm the status pill displays `Engine: FalkorDB (Bolt :6379)` with a pulsing indicator.
    - Click **Run** on Scenario 1 (*Cascading Timeout & Breaking Commit*).
    - Observe real-time SSE streaming and graph path illumination over TLS.

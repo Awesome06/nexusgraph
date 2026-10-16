@@ -4,11 +4,13 @@
 [![Track Qualification](https://img.shields.io/badge/Tracks-01%20%7C%2002%20%7C%2003-emerald.svg)]()
 [![Cypher Engine](https://img.shields.io/badge/Cypher-GraphBLAS-cyan.svg)]()
 [![Test Suite](https://img.shields.io/badge/Tests-10%2F10%20Passed-brightgreen.svg)]()
+[![Live Dashboard](https://img.shields.io/badge/Live_Dashboard-Vercel_Edge-black.svg?logo=vercel)](https://nexusgraph-mu.vercel.app/)
+[![Live API Docs](https://img.shields.io/badge/Live_API-Render_HTTPS-46E3B7.svg?logo=render)](https://nexusgraph-v8n0.onrender.com/docs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **NexusGraph** is an autonomous multi-agent engineering swarm powered natively by **FalkorDB** as its active context, shared coordination blackboard, and procedural memory layer. Built for **FalkorDB Graph Hacks 2026**, it resolves production incidents by combining multi-hop blast-radius graph traversals, organizational decision provenance (ADRs), and cross-session incident memory to isolate and roll back breaking changes in seconds.
 
-[Track Qualification](#competition-track-qualification) | [System Architecture](#system-architecture--multigraph-topology) | [FastMCP Cypher Tools](#cypher-query-contracts--fastmcp-tool-suite) | [Benchmarks](#performance--quality-benchmarks) | [Architecture Console](#falkordb-architecture-console--diagnostic-apis) | [Quickstart](#quick-start--deployment)
+[Live Dashboard](https://nexusgraph-mu.vercel.app/) | [Live API Docs](https://nexusgraph-v8n0.onrender.com/docs) | [Track Qualification](#competition-track-qualification) | [System Architecture](#system-architecture--multigraph-topology) | [FastMCP Cypher Tools](#cypher-query-contracts--fastmcp-tool-suite) | [Benchmarks](#performance--quality-benchmarks) | [Deployment](#quick-start--deployment)
 
 ---
 
@@ -295,15 +297,16 @@ npm run dev
 # Dashboard available at http://localhost:3001
 ```
 
-### Option C: Zero-Cost Production Cloud Deployment
+### Option C: Live Production Cloud Deployment (Active Instance)
 
-NexusGraph can be deployed with zero infrastructure costs ($0 budget, no credit card required) across three specialized free tiers:
+NexusGraph is deployed live with zero infrastructure costs ($0 budget, no credit card required) across three specialized free tiers:
 
-| Layer | Provider | Free Tier Specification | Configuration File |
+| Layer | Live Production Instance | Cloud Provider & Tier | Configuration Manifest |
 | :--- | :--- | :--- | :--- |
-| **Graph Engine** | [FalkorDB Cloud](https://app.falkordb.cloud/) | 24/7 Persistent Multigraph Engine, TLS/SSL | [`.env.example`](.env.example) |
-| **Backend API** | [Render.com](https://render.com/) | Free Web Service (FastAPI + LangGraph) | [`render.yaml`](render.yaml) |
-| **Frontend UI** | [Vercel](https://vercel.com/) | Global Edge CDN (Next.js 14 App Router) | [`frontend/vercel.json`](frontend/vercel.json) |
+| **Command Center Dashboard** | **[https://nexusgraph-mu.vercel.app](https://nexusgraph-mu.vercel.app/)** | Vercel Edge Network (Next.js 14 App Router) | [`frontend/vercel.json`](frontend/vercel.json) |
+| **Backend API & Swagger** | **[https://nexusgraph-v8n0.onrender.com/docs](https://nexusgraph-v8n0.onrender.com/docs)** | Render.com Web Service (FastAPI + LangGraph) | [`render.yaml`](render.yaml) |
+| **Graph Engine** | `r-6jissuruar.instance-k5i62m7ep.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud:64801` | FalkorDB Cloud Free Tier (Bolt Protocol) | [`.env.example`](.env.example) |
+| **Health & Multigraph Probe** | **[https://nexusgraph-v8n0.onrender.com/api/health](https://nexusgraph-v8n0.onrender.com/api/health)** | Native Bolt Status (org_brain, procedural_memory, blackboard) | [`backend/app/main.py`](backend/app/main.py) |
 
 For step-by-step setup, TLS configuration, and live verification commands, refer to the [Zero-Cost Production Deployment Guide](wiki/runbooks/zero-cost-deployment.md).
 
@@ -468,4 +471,6 @@ backend\tests\test_swarm.py::test_full_swarm_pipeline_execution PASSED   [100%]
   - **Track 03:** Company Brain
 - **Team Members:**
   - Mrigank Bhatnagar ([@Awesome06](https://github.com/Awesome06))
+- **AI Assistant Disclosure:**
+  - In compliance with Hackathon Rule 11, this project was architected, directed, and deployed by the author, with implementation code and tests generated in collaboration with Antigravity AI (Google DeepMind). The author defined the system architecture, multigraph isolation strategy, FastMCP tool specifications, and cloud deployment configurations, and conducted end-to-end verification and testing.
 - **License:** MIT
