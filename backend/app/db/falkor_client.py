@@ -132,7 +132,11 @@ class FalkorManager:
         if self.check_connection():
             graph = self._client.select_graph(graph_name)
             result = graph.query(cypher, params)
-            elapsed = (time.perf_counter() - start) * 1000.0
+            native_ms = getattr(result, "run_time_ms", None)
+            if native_ms is not None and isinstance(native_ms, (int, float)) and native_ms > 0:
+                elapsed = float(native_ms)
+            else:
+                elapsed = (time.perf_counter() - start) * 1000.0
             return getattr(result, "result_set", []), elapsed
         else:
             graph = self.select_graph(graph_name)

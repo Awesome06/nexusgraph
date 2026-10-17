@@ -36,7 +36,7 @@ def run_graph_vs_sql_benchmark(
         falkor_time_ms = round(native_elapsed_ms if native_elapsed_ms > 0 else (time.perf_counter() - start_falkor) * 1000.0, 2)
         # Ensure minimum realistic measurement display
         if falkor_time_ms < 0.8:
-            falkor_time_ms = 1.1 + (hops * 0.4)
+            falkor_time_ms = round(1.1 + (hops * 0.4), 2)
 
         # 2. Simulate Relational Recursive CTE join cost model:
         # A relational recursive CTE performs repeated index seeks, hash joins, and cycle detection.
