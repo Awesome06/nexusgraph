@@ -12,10 +12,68 @@ import {
   Sparkles,
   AlertTriangle,
   Code2,
-  X
+  X,
+  Plus,
+  Bookmark
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+export interface CypherPreset {
+  id: string;
+  name: string;
+  query: string;
+  isCustom?: boolean;
+}
+
+const DEFAULT_PRESETS: Record<string, CypherPreset[]> = {
+  org_brain: [
+    {
+      id: "blast-radius",
+      name: "Blast Radius",
+      query: "MATCH path = (s:Service {name: 'ledger-db'})<-[:DEPENDS_ON*1..4]-(d:Service)\nRETURN [n IN nodes(path) | n.name] AS chain, length(path) AS depth\nORDER BY depth ASC"
+    },
+    {
+      id: "centrality",
+      name: "Centrality",
+      query: "MATCH (s:Service)<-[r:DEPENDS_ON]-(d:Service)\nRETURN s.name AS service, count(d) AS inbound_deps\nORDER BY inbound_deps DESC"
+    },
+    {
+      id: "adr-governance",
+      name: "ADR Governance",
+      query: "MATCH (adr:ADR)-[:GOVERNS]->(s:Service)\nRETURN adr.id AS id, adr.title AS title, s.name AS service"
+    }
+  ],
+  procedural_memory: [
+    {
+      id: "runbook-match",
+      name: "Runbook Match",
+      query: "MATCH (p:Pattern)-[r:RESOLVED_BY]->(s:RunbookStep)\nRETURN p.symptom_signature AS pattern, s.id AS step_id, s.action_type AS action, r.confidence AS confidence"
+    },
+    {
+      id: "incident-history",
+      name: "Incident History",
+      query: "MATCH (i:Incident)-[r:AFFECTED_SERVICE]->(p:Pattern)\nRETURN i.id AS incident, i.title AS title, r.service_id AS affected_service, p.symptom_signature AS pattern"
+    },
+    {
+      id: "all-patterns",
+      name: "All Patterns",
+      query: "MATCH (p:Pattern)\nRETURN p.id AS id, p.symptom_signature AS symptom, p.description AS description"
+    }
+  ],
+  blackboard_demo: [
+    {
+      id: "swarm-tasks",
+      name: "Swarm Tasks",
+      query: "MATCH (t:Task)\nRETURN t.id AS task, t.description AS description, t.status AS status"
+    },
+    {
+      id: "findings-actions",
+      name: "Findings & Actions",
+      query: "MATCH (t:Task)-[:ASSIGNED_TO]->(f:Finding)-[:SUPPORTS]->(a:ProposedAction)\nRETURN f.agent_name AS agent, f.summary AS finding, a.action_type AS action, a.approved AS approved"
+    }
+  ]
+};
 
 interface CypherConsoleProps {
   isOpen: boolean;
@@ -36,13 +94,131 @@ export default function CypherConsole({
   const [benchmarkData, setBenchmarkData] = useState<any>(null);
   const [isBenchmarking, setIsBenchmarking] = useState(false);
 
+  // Load presets per namespace from localStorage or default
+  const [namespacePresets, setNamespacePresets] = useState<Record<string, CypherPreset[]>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("nexusgraph_cypher_presets");
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error reading presets from localStorage:", e);
+      }
+    }
+    return DEFAULT_PRESETS;
+  });
+
+  // Load last edited query per namespace from localStorage
+  const [namespaceQueries, setNamespaceQueries] = useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("nexusgraph_namespace_queries");
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error reading queries from localStorage:", e);
+      }
+    }
+    return {
+      org_brain: DEFAULT_PRESETS.org_brain[0].query,
+      procedural_memory: DEFAULT_PRESETS.procedural_memory[0].query,
+      blackboard_demo: DEFAULT_PRESETS.blackboard_demo[0].query,
+    };
+  });
+
   // Cypher scratchpad state
   const [selectedNamespace, setSelectedNamespace] = useState(activeGraphName || "org_brain");
   const [customCypher, setCustomCypher] = useState(
-    "MATCH path = (s:Service {name: 'ledger-db'})<-[:DEPENDS_ON*1..4]-(d:Service)\nRETURN [n IN nodes(path) | n.name] AS chain, length(path) AS depth\nORDER BY depth ASC"
+    namespaceQueries[activeGraphName || "org_brain"] || DEFAULT_PRESETS[activeGraphName || "org_brain"]?.[0]?.query || DEFAULT_PRESETS.org_brain[0].query
   );
+  const [activePresetId, setActivePresetId] = useState<string | null>(
+    DEFAULT_PRESETS[activeGraphName || "org_brain"]?.[0]?.id || "blast-radius"
+  );
+  const [isAddingPreset, setIsAddingPreset] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [resetFeedback, setResetFeedback] = useState(false);
   const [cypherResult, setCypherResult] = useState<any>(null);
   const [isQuerying, setIsQuerying] = useState(false);
+
+  const handleNamespaceChange = (newNamespace: string) => {
+    const updatedQueries = { ...namespaceQueries, [selectedNamespace]: customCypher };
+    setNamespaceQueries(updatedQueries);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("nexusgraph_namespace_queries", JSON.stringify(updatedQueries));
+    }
+
+    setSelectedNamespace(newNamespace);
+    const presetsForNs = namespacePresets[newNamespace] || DEFAULT_PRESETS[newNamespace] || [];
+    const nextQuery = updatedQueries[newNamespace] || presetsForNs[0]?.query || "MATCH (n) RETURN n LIMIT 10";
+    setCustomCypher(nextQuery);
+    setActivePresetId(presetsForNs[0]?.id || null);
+    setCypherResult(null);
+  };
+
+  const handleQueryChange = (val: string) => {
+    setCustomCypher(val);
+    const updated = { ...namespaceQueries, [selectedNamespace]: val };
+    setNamespaceQueries(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("nexusgraph_namespace_queries", JSON.stringify(updated));
+    }
+  };
+
+  const handleSelectPreset = (preset: CypherPreset) => {
+    setActivePresetId(preset.id);
+    handleQueryChange(preset.query);
+  };
+
+  const handleSavePreset = () => {
+    if (!newPresetName.trim() || !customCypher.trim()) return;
+    const newPreset: CypherPreset = {
+      id: "preset-" + Date.now(),
+      name: newPresetName.trim(),
+      query: customCypher.trim(),
+      isCustom: true
+    };
+    const currentList = namespacePresets[selectedNamespace] || DEFAULT_PRESETS[selectedNamespace] || [];
+    const updatedList = [...currentList, newPreset];
+    const updatedMap = { ...namespacePresets, [selectedNamespace]: updatedList };
+    setNamespacePresets(updatedMap);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("nexusgraph_cypher_presets", JSON.stringify(updatedMap));
+    }
+    setActivePresetId(newPreset.id);
+    setNewPresetName("");
+    setIsAddingPreset(false);
+  };
+
+  const handleDeletePreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentList = namespacePresets[selectedNamespace] || DEFAULT_PRESETS[selectedNamespace] || [];
+    const updatedList = currentList.filter(p => p.id !== id);
+    const updatedMap = { ...namespacePresets, [selectedNamespace]: updatedList };
+    setNamespacePresets(updatedMap);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("nexusgraph_cypher_presets", JSON.stringify(updatedMap));
+    }
+    if (activePresetId === id) setActivePresetId(null);
+  };
+
+  const handleResetPresets = () => {
+    const defaultForNs = DEFAULT_PRESETS[selectedNamespace] || [];
+    const updatedMap = { ...namespacePresets, [selectedNamespace]: defaultForNs };
+    setNamespacePresets(updatedMap);
+
+    const defaultQuery = defaultForNs[0]?.query || "MATCH (n) RETURN n LIMIT 10";
+    setCustomCypher(defaultQuery);
+
+    const updatedQueries = { ...namespaceQueries, [selectedNamespace]: defaultQuery };
+    setNamespaceQueries(updatedQueries);
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("nexusgraph_cypher_presets", JSON.stringify(updatedMap));
+      localStorage.setItem("nexusgraph_namespace_queries", JSON.stringify(updatedQueries));
+    }
+    setActivePresetId(defaultForNs[0]?.id || null);
+    setCypherResult(null);
+    setResetFeedback(true);
+    setTimeout(() => setResetFeedback(false), 2000);
+  };
 
   // Chaos state
   const [chaosResult, setChaosResult] = useState<any>(null);
@@ -245,107 +421,104 @@ export default function CypherConsole({
           {/* TAB 2: openCypher REPL */}
           {activeTab === "cypher" && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-slate-400 font-mono">Namespace:</label>
-                  <select
-                    value={selectedNamespace}
-                    onChange={(e) => setSelectedNamespace(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono text-cyan-300 focus:outline-none"
-                  >
-                    <option value="org_brain">org_brain</option>
-                    <option value="blackboard_demo">blackboard_demo</option>
-                    <option value="procedural_memory">procedural_memory</option>
-                  </select>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-slate-400 font-mono">Namespace:</label>
+                    <select
+                      value={selectedNamespace}
+                      onChange={(e) => handleNamespaceChange(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono text-cyan-300 focus:outline-none"
+                    >
+                      <option value="org_brain">org_brain</option>
+                      <option value="blackboard_demo">blackboard_demo</option>
+                      <option value="procedural_memory">procedural_memory</option>
+                    </select>
+                  </div>
+
+                  {/* Reset Presets Button */}
+                  <div className="flex items-center gap-2">
+                    {resetFeedback && (
+                      <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Reset to defaults
+                      </span>
+                    )}
+                    <button
+                      onClick={handleResetPresets}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 border border-slate-800 text-[11px] font-mono transition-all"
+                      title="Reset presets and queries for this namespace to defaults"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset Presets</span>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Templates based on selected namespace */}
-                <div className="flex gap-1.5 text-[10px] font-mono">
-                  {selectedNamespace === "org_brain" && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setSelectedNamespace("org_brain");
-                          setCustomCypher("MATCH path = (s:Service {name: 'ledger-db'})<-[:DEPENDS_ON*1..4]-(d:Service)\nRETURN [n IN nodes(path) | n.name] AS chain, length(path) AS depth\nORDER BY depth ASC");
-                        }}
-                        className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
-                      >
-                        Blast Radius
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedNamespace("org_brain");
-                          setCustomCypher("MATCH (s:Service)<-[r:DEPENDS_ON]-(d:Service)\nRETURN s.name AS service, count(d) AS inbound_deps\nORDER BY inbound_deps DESC");
-                        }}
-                        className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
-                      >
-                        Centrality
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedNamespace("org_brain");
-                          setCustomCypher("MATCH (adr:ADR)-[:GOVERNS]->(s:Service)\nRETURN adr.id AS id, adr.title AS title, s.name AS service");
-                        }}
-                        className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
-                      >
-                        ADR Governance
-                      </button>
-                    </>
-                  )}
+                {/* Dynamic Presets Bar */}
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono pt-1">
+                  <span className="text-slate-500 text-[11px] font-mono mr-1">Presets:</span>
+                  {(namespacePresets[selectedNamespace] || []).map((preset) => (
+                    <button
+                      key={preset.id}
+                      onClick={() => handleSelectPreset(preset)}
+                      className={`group relative flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${
+                        activePresetId === preset.id
+                          ? "bg-cyan-950 text-cyan-300 border border-cyan-500/50 font-semibold shadow-sm shadow-cyan-500/20"
+                          : "bg-slate-800/80 text-slate-300 hover:text-white border border-slate-700/60"
+                      }`}
+                    >
+                      <span>{preset.name}</span>
+                      {preset.isCustom && (
+                        <span
+                          onClick={(e) => handleDeletePreset(preset.id, e)}
+                          className="ml-1 text-slate-400 hover:text-rose-400 p-0.5 rounded transition-colors"
+                          title="Delete custom preset"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </span>
+                      )}
+                    </button>
+                  ))}
 
-                  {selectedNamespace === "procedural_memory" && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setSelectedNamespace("procedural_memory");
-                          setCustomCypher("MATCH (p:Pattern)-[r:RESOLVED_BY]->(s:RunbookStep)\nRETURN p.symptom_signature AS pattern, s.id AS step_id, s.action_type AS action, r.confidence AS confidence");
+                  {/* Add Preset Button or Inline Creator */}
+                  {!isAddingPreset ? (
+                    <button
+                      onClick={() => setIsAddingPreset(true)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-cyan-300 border border-dashed border-slate-700 transition-all"
+                      title="Save current query as a custom preset in this namespace"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Save Current Query</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-md border border-cyan-500/60">
+                      <input
+                        type="text"
+                        placeholder="Preset Name..."
+                        value={newPresetName}
+                        onChange={(e) => setNewPresetName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSavePreset();
+                          if (e.key === "Escape") setIsAddingPreset(false);
                         }}
-                        className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:text-white"
+                        autoFocus
+                        className="bg-transparent text-xs text-cyan-200 placeholder-slate-500 px-1.5 py-0.5 focus:outline-none w-32 font-mono"
+                      />
+                      <button
+                        onClick={handleSavePreset}
+                        className="p-1 text-emerald-400 hover:text-emerald-300"
+                        title="Confirm save"
                       >
-                        Runbook Match
+                        <Check className="w-3 h-3" />
                       </button>
                       <button
-                        onClick={() => {
-                          setSelectedNamespace("procedural_memory");
-                          setCustomCypher("MATCH (i:Incident)-[r:AFFECTED_SERVICE]->(p:Pattern)\nRETURN i.id AS incident, i.title AS title, r.service_id AS affected_service, p.symptom_signature AS pattern");
-                        }}
-                        className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:text-white"
+                        onClick={() => setIsAddingPreset(false)}
+                        className="p-1 text-slate-400 hover:text-rose-400"
+                        title="Cancel"
                       >
-                        Incident History
+                        <X className="w-3 h-3" />
                       </button>
-                      <button
-                        onClick={() => {
-                          setSelectedNamespace("procedural_memory");
-                          setCustomCypher("MATCH (p:Pattern)\nRETURN p.id AS id, p.symptom_signature AS symptom, p.description AS description");
-                        }}
-                        className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:text-white"
-                      >
-                        All Patterns
-                      </button>
-                    </>
-                  )}
-
-                  {selectedNamespace === "blackboard_demo" && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setSelectedNamespace("blackboard_demo");
-                          setCustomCypher("MATCH (t:Task)\nRETURN t.id AS task, t.description AS description, t.status AS status");
-                        }}
-                        className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 hover:text-white"
-                      >
-                        Swarm Tasks
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedNamespace("blackboard_demo");
-                          setCustomCypher("MATCH (t:Task)-[:ASSIGNED_TO]->(f:Finding)-[:SUPPORTS]->(a:ProposedAction)\nRETURN f.agent_name AS agent, f.summary AS finding, a.action_type AS action, a.approved AS approved");
-                        }}
-                        className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 hover:text-white"
-                      >
-                        Findings & Actions
-                      </button>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
@@ -353,7 +526,7 @@ export default function CypherConsole({
               <div className="relative">
                 <textarea
                   value={customCypher}
-                  onChange={(e) => setCustomCypher(e.target.value)}
+                  onChange={(e) => handleQueryChange(e.target.value)}
                   rows={4}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-cyan-200 focus:outline-none focus:border-cyan-500/60 leading-relaxed"
                   placeholder="MATCH (n) RETURN n LIMIT 10"
