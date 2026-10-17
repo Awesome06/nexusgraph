@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import MemoryInspector from "@/components/MemoryInspector";
+import SwarmSidebar from "@/components/SwarmSidebar";
+import SwarmTopBar from "@/components/SwarmTopBar";
+import HeroScreen from "@/components/HeroScreen";
 import ScenarioSelector, { Scenario } from "@/components/ScenarioSelector";
 import AgentTracePanel, { AgentStepEvent } from "@/components/AgentTracePanel";
 import GraphCanvas, { GraphNode, GraphEdge } from "@/components/GraphCanvas";
@@ -37,6 +39,8 @@ const DEFAULT_SCENARIOS: Scenario[] = [
 ];
 
 export default function NexusGraphDashboard() {
+  const [viewMode, setViewMode] = useState<"hero" | "dashboard">("hero");
+  const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [activeGraph, setActiveGraph] = useState<string>("org_brain");
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
@@ -161,7 +165,6 @@ export default function NexusGraphDashboard() {
       console.warn("SSE connection closed or error:", err);
       setIsStreaming(false);
       eventSource.close();
-      // Generate deterministic client demo simulation based on selected scenario
       if (events.length === 0) {
         runClientFallbackDemo(query, sessionId, scenarioId);
       }
@@ -201,12 +204,12 @@ export default function NexusGraphDashboard() {
             tool_name: "compute_critical_bottlenecks",
             agent_name: "Recon",
             cypher_query:
-              "MATCH (s:Service)<-[r:DEPENDS_ON]-(dependent:Service)\nWITH s, count(dependent) AS inbound_deps\nMATCH (t:Team)-[:OWNS]->(s)\nOPTIONAL MATCH (p:Person)-[:AUTHORED]->(:Commit)-[:DEPLOYED_TO]->(s)\nRETURN s.name AS service, inbound_deps, t.name AS owning_team, count(DISTINCT p) AS contributor_bus_factor\nORDER BY inbound_deps DESC",
+              "MATCH (s:Service)<-[r:DEPENDS_ON]-(caller:Service)\nRETURN s.name AS service, count(r) AS in_degree, collect(caller.name) AS callers\nORDER BY in_degree DESC LIMIT 5",
             parameters: {},
-            execution_time_ms: 1.6,
-            nodes_affected: 6,
-            relationships_affected: 5,
-            explanation: "Isolated Single Point of Failure: 'fraud-scorer' has Bus Factor = 1 (sole author Lucas Silva). In-degree bottleneck: 'payment-engine'.",
+            execution_time_ms: 1.4,
+            nodes_affected: 5,
+            relationships_affected: 12,
+            explanation: "Isolated services with high in-degree centrality. Identified critical single points of failure.",
           },
           timestamp: new Date().toISOString(),
         },
@@ -214,21 +217,21 @@ export default function NexusGraphDashboard() {
           step_id: "step-2",
           session_id: sessionId,
           agent: "Historian",
-          stage: "Stage 2: ADR Governance Audit",
+          stage: "Stage 2: ADR Governance & Ownership Audit",
           status: "running",
           thought:
-            "Auditing ADR governance coverage across company services. Discovered 'fraud-scorer' is completely ungoverned by active ADRs (0 active policies).",
-          tool_call: { tool: "audit_adr_governance", params: { service_name: "fraud-scorer" } },
+            "Auditing ADR governance for 'fraud-scorer'. Discovered Bus Factor = 1 (Lucas Silva). Service violates ADR-005 (Mandatory dual-maintainer redundancy).",
+          tool_call: { tool: "find_shortest_ownership_path", params: { service: "fraud-scorer" } },
           cypher_trace: {
-            tool_name: "audit_adr_governance",
+            tool_name: "find_shortest_ownership_path",
             agent_name: "Historian",
             cypher_query:
-              "MATCH (s:Service)\nOPTIONAL MATCH (adr:ADR {status: 'ACTIVE'})-[:GOVERNS]->(s)\nRETURN s.name AS service, s.tier AS tier, count(adr) AS adr_count, collect(adr.id) AS governing_adrs\nORDER BY adr_count ASC",
-            parameters: {},
-            execution_time_ms: 1.9,
-            nodes_affected: 6,
-            relationships_affected: 3,
-            explanation: "Identified shadow tech debt: 'fraud-scorer' has 0 governing ADRs despite being in the synchronous checkout path.",
+              "MATCH (p:Person)-[:OWNS]->(s:Service {name: 'fraud-scorer'})\nOPTIONAL MATCH (s)-[:GOVERNED_BY]->(adr:ADR)\nRETURN p.name AS owner, s.name AS service, adr.title AS adr",
+            parameters: { service: "fraud-scorer" },
+            execution_time_ms: 0.9,
+            nodes_affected: 3,
+            relationships_affected: 2,
+            explanation: "Identified that 'fraud-scorer' is owned exclusively by Lucas Silva without a designated secondary maintainer.",
           },
           timestamp: new Date().toISOString(),
         },
@@ -236,26 +239,26 @@ export default function NexusGraphDashboard() {
           step_id: "step-3",
           session_id: sessionId,
           agent: "Executor",
-          stage: "Stage 3: Governance Action Plan",
+          stage: "Stage 3: Remediation & Policy Enforcement",
           status: "complete",
           thought:
-            "Mutating FalkorDB blackboard: Dispatching succession pairing mandate (Lucas Silva + Priya Sharma) and drafting ADR-004.",
-          tool_call: { tool: "mutate_governance_action", params: { target_service: "fraud-scorer" } },
+            "Drafted ADR governance policy update into blackboard. Recommended co-ownership assignment to Elena Rostova to achieve Bus Factor >= 2.",
+          tool_call: { tool: "draft_governance_remediation", params: { service: "fraud-scorer", co_owner: "Elena Rostova" } },
           cypher_trace: {
-            tool_name: "mutate_governance_action",
+            tool_name: "draft_governance_remediation",
             agent_name: "Executor",
             cypher_query:
-              "CREATE (a1:ProposedAction {action_type: 'ASSIGN_SUCCESSION_PAIRING', target_service: 'fraud-scorer', primary: 'Lucas Silva', secondary: 'Priya Sharma'})\nCREATE (a2:ProposedAction {action_type: 'DRAFT_ADR', title: 'ADR-004: ML Fraud Scoring Latency SLA'})\nRETURN a1, a2",
-            parameters: { target_service: "fraud-scorer" },
-            execution_time_ms: 2.0,
+              "MATCH (s:Service {name: 'fraud-scorer'}), (p:Person {name: 'Elena Rostova'})\nMERGE (p)-[r:CO_OWNS]->(s)\nRETURN s.name, p.name",
+            parameters: { service: "fraud-scorer", co_owner: "Elena Rostova" },
+            execution_time_ms: 1.2,
             nodes_affected: 2,
-            relationships_affected: 0,
-            explanation: "Created succession pairing and ADR draft governance directives directly in the coordination blackboard.",
+            relationships_affected: 1,
+            explanation: "Assigned co-ownership to Elena Rostova, elevating Bus Factor to 2 and satisfying ADR-005 governance rules.",
           },
           timestamp: new Date().toISOString(),
           is_final: true,
           final_answer:
-            "### 🏛️ NexusGraph Organizational Governance & Bus Factor Audit Complete\n\n1. **Single-Point-of-Failure (Bus Factor = 1) Isolated:**\n- **Service:** `fraud-scorer` (Tier-2 ML evaluation engine)\n- **Sole Author:** **Lucas Silva** (Data Engineer, `FinTech-Squad`)\n- **Centrality Risk:** `payment-engine` depends synchronously on `fraud-scorer` with zero fallback cache.\n\n2. **Architectural Governance Gaps:**\n- `fraud-scorer` has **0 active ADRs** governing model inference timeout budgets or degradation behavior.\n- Cross-team disconnect: 4 hops between Principal Architect (Elena Rostova) and the service owner.\n\n3. **Autonomous Governance Actions Dispatched:**\n- **Succession Pairing Mandate:** Assigned **Priya Sharma** (Senior Platform Engineer) as secondary on-call.\n- **Drafted Architecture Directive:** Emitted `ADR-004: ML Fraud Scoring Timeout and Fallback SLA` into the blackboard.\n- **Blackboard State:** Registered proposed governance directives in `blackboard_demo`.",
+            "### 📋 NexusGraph Organizational Bus Factor & ADR Governance Audit Complete\n\n1. **Critical Bottleneck Identified:**\n- Service: `fraud-scorer` (In-degree centrality: **4 callers**)\n- Current Bus Factor: **1 (Lucas Silva)**\n\n2. **Policy Violation:**\n- **ADR-005 Breach:** Core tier-1 scoring services must maintain >= 2 active maintainers.\n\n3. **Automated Governance Action:**\n- Co-ownership assigned to **Elena Rostova** (`Core-Platform` squad).\n- Bus Factor elevated to **2**; governance ticket dispatched to engineering leadership.",
         },
       ];
     } else if (isMemoryRecall) {
@@ -338,20 +341,20 @@ export default function NexusGraphDashboard() {
           step_id: "step-1",
           session_id: sessionId,
           agent: "Recon",
-          stage: "Stage 1: Alert & Blast Radius",
+          stage: "Stage 1: Blast Radius Traversal",
           status: "running",
-          thought: `Trigger received: '${query}'. Executing variable-length Cypher traversal (*1..4) from 'payment-engine' in FalkorDB 'org_brain'.`,
+          thought: `Received alert: '${query}'. Executing variable-length openCypher query on FalkorDB 'org_brain'. Traversed 4 hops upstream from 'payment-engine' in 0.38ms.`,
           tool_call: { tool: "trace_blast_radius", params: { service_name: "payment-engine", max_hops: 4 } },
           cypher_trace: {
             tool_name: "trace_blast_radius",
             agent_name: "Recon",
             cypher_query:
-              "MATCH path = (source:Service {name: 'payment-engine'})<-[:DEPENDS_ON*1..4]-(downstream:Service)\nRETURN [n IN nodes(path) | n.name] AS dependency_chain, length(path) AS hops, downstream.tier AS tier\nORDER BY hops ASC",
-            parameters: { service_name: "payment-engine" },
-            execution_time_ms: 1.4,
-            nodes_affected: 4,
-            relationships_affected: 3,
-            explanation: "Identified cascading path upwards to api-gateway. Blast radius score: 0.85 (CRITICAL).",
+              "MATCH path = (s:Service {name: 'payment-engine'})<-[:DEPENDS_ON*1..4]-(caller:Service)\nRETURN [n IN nodes(path) | n.name] AS chain, length(path) AS depth\nORDER BY depth ASC",
+            parameters: { service_name: "payment-engine", max_hops: 4 },
+            execution_time_ms: 0.38,
+            nodes_affected: 6,
+            relationships_affected: 8,
+            explanation: "GraphBLAS BFS traversal isolated upstream impact path: api-gateway -> payment-engine -> ledger-db.",
           },
           timestamp: new Date().toISOString(),
         },
@@ -359,21 +362,21 @@ export default function NexusGraphDashboard() {
           step_id: "step-2",
           session_id: sessionId,
           agent: "Historian",
-          stage: "Stage 2: Lineage & ADR Check",
+          stage: "Stage 2: Lineage & Policy Audit",
           status: "running",
           thought:
-            "Traversing commit lineage for 'payment-engine'. CROSS-REFERENCED WITH ADR-002: Commit 8f92a1c by Arjun Mehta set timeout to 5000ms, violating ADR-002 (must be <= 200ms).",
+            "Correlating git commits and ADR contracts in FalkorDB. Discovered commit 8f92a1c ('fix: increase timeout') authored by Arjun Mehta directly violates ADR-002 (ledger timeout <= 200ms).",
           tool_call: { tool: "find_breaking_commit_and_owner", params: { service_name: "payment-engine" } },
           cypher_trace: {
             tool_name: "find_breaking_commit_and_owner",
             agent_name: "Historian",
             cypher_query:
-              "MATCH (s:Service {name: 'payment-engine'})-[:DEPENDS_ON*0..2]->(dep:Service)\nMATCH (p:Person)-[:AUTHORED]->(c:Commit)-[:DEPLOYED_TO]->(dep)\nOPTIONAL MATCH (adr:ADR {status: 'ACTIVE'})-[:GOVERNS]->(dep)\nRETURN dep.name, c.sha, c.message, p.name, p.slack_handle, adr.rule_summary",
+              "MATCH (c:Commit)-[:AUTHORED_BY]->(p:Person)\nMATCH (c)-[:MODIFIED]->(s:Service {name: 'payment-engine'})\nMATCH (s)-[:GOVERNED_BY]->(adr:ADR)\nWHERE c.sha = '8f92a1c'\nRETURN c.sha AS commit, p.name AS author, adr.title AS adr",
             parameters: { service_name: "payment-engine" },
-            execution_time_ms: 2.1,
-            nodes_affected: 5,
-            relationships_affected: 4,
-            explanation: "Isolated breaking commit 8f92a1c authored by Arjun Mehta (@arjun) violating ADR-002.",
+            execution_time_ms: 1.1,
+            nodes_affected: 4,
+            relationships_affected: 3,
+            explanation: "Cross-domain join matched offending git SHA to ADR policy violation.",
           },
           timestamp: new Date().toISOString(),
         },
@@ -381,22 +384,19 @@ export default function NexusGraphDashboard() {
           step_id: "step-3",
           session_id: sessionId,
           agent: "Executor",
-          stage: "Stage 3: Graph-Driven Action",
+          stage: "Stage 3: Remediation & Memory",
           status: "complete",
           thought:
-            "Mutating FalkorDB state: Reverting timeout commit, flushing payment-engine connection pool, setting Service status = 'HEALTHY'.",
-          tool_call: {
-            tool: "mutate_graph_action",
-            params: { service_name: "payment-engine", action: "ROLLBACK_CONFIG_AND_FLUSH_POOL" },
-          },
+            "Executing automated remediation: rolling back timeout config, flushing connection pool, mutating FalkorDB org_brain to HEALTHY state, and logging incident resolution in procedural_memory.",
+          tool_call: { tool: "mutate_graph_action", params: { action: "ROLLBACK_CONFIG_AND_FLUSH_POOL" } },
           cypher_trace: {
             tool_name: "mutate_graph_action",
             agent_name: "Executor",
             cypher_query:
-              "MATCH (s:Service {name: 'payment-engine'})\nSET s.status = 'HEALTHY'\nCREATE (pa:ProposedAction {action_type: 'ROLLBACK', target_service: 'payment-engine', approved: true})\nRETURN s, pa",
+              "MATCH (s:Service {name: 'payment-engine'})\nSET s.status = 'HEALTHY', s.p99_latency_ms = 45\nRETURN s",
             parameters: { service_name: "payment-engine" },
-            execution_time_ms: 1.8,
-            nodes_affected: 2,
+            execution_time_ms: 0.85,
+            nodes_affected: 1,
             relationships_affected: 1,
             explanation: "Automated rollback applied. Graph state restored to HEALTHY.",
           },
@@ -422,59 +422,131 @@ export default function NexusGraphDashboard() {
     });
   };
 
-  return (
-    <div className="flex flex-col h-screen w-screen bg-[#07090e] text-slate-100 overflow-hidden font-sans">
-      {/* 1. Top Bar: Multigraph Inspector, Status & Brand */}
-      <MemoryInspector
-        activeGraph={activeGraph}
-        onSelectGraph={handleSelectGraph}
-        onResetSeed={handleResetSeed}
-        onOpenConsole={() => setIsConsoleOpen(true)}
-        isSeeding={isSeeding}
-        nodeCount={nodes.length}
-        edgeCount={edges.length}
-        falkorConnected={falkorConnected}
-      />
+  // Enter dashboard transition from Hero
+  const handleEnterDashboard = (scenarioId?: string) => {
+    setViewMode("dashboard");
+    if (scenarioId) {
+      const sc = DEFAULT_SCENARIOS.find((s) => s.id === scenarioId);
+      if (sc) {
+        setTimeout(() => {
+          handleTriggerInvestigation(sc.suggested_query, sc.id);
+        }, 350);
+      }
+    }
+  };
 
-      {/* 2. Main Split-Screen Command Center */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-2.5 p-2.5 min-h-0 overflow-hidden">
-        {/* Left Pane (5 Cols): 1-Click Scenarios + Agent Trace Panel */}
-        <div className="lg:col-span-5 flex flex-col gap-2.5 min-h-0 h-full overflow-hidden">
-          <ScenarioSelector
-            scenarios={DEFAULT_SCENARIOS}
-            onTriggerScenario={handleTriggerInvestigation}
-            isLoading={isStreaming}
+  // Trigger chaos failure injection
+  const handleTriggerChaos = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chaos/inject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_service: "payment-engine" }),
+      });
+      if (res.ok) {
+        fetchGraphTopology(activeGraph);
+        handleTriggerInvestigation("ALERT: High Latency and Connection Pool Starvation detected on payment-engine");
+      }
+    } catch (e) {
+      console.warn("Chaos injection failed, triggering local alert simulation:", e);
+      handleTriggerInvestigation("ALERT: High Latency and Connection Pool Starvation detected on payment-engine");
+    }
+  };
+
+  return (
+    <div className="relative h-screen w-screen bg-[#050508] text-slate-100 overflow-hidden font-sans flex">
+      {/* ── 0. HERO SCREEN OVERLAY / STAGE ───────────────────────── */}
+      <div
+        className={`absolute inset-0 z-30 overflow-y-auto transition-all duration-500 ease-out ${
+          viewMode === "hero"
+            ? "opacity-100 scale-100 pointer-events-auto"
+            : "opacity-0 scale-95 pointer-events-none"
+        }`}
+      >
+        <HeroScreen
+          onEnterDashboard={handleEnterDashboard}
+          falkorConnected={falkorConnected}
+        />
+      </div>
+
+      {/* ── 1. MAIN MISSION CONTROL OPS CENTER (NetWatch Layout) ─── */}
+      <div
+        className={`flex h-full w-full transition-all duration-500 ease-out ${
+          viewMode === "dashboard"
+            ? "opacity-100 scale-100 pointer-events-auto"
+            : "opacity-0 scale-105 pointer-events-none"
+        }`}
+      >
+        {/* Left Navigation Rail (NetWatch style) */}
+        <SwarmSidebar
+          activeTab={activeTab}
+          onSelectTab={(tab) => {
+            setActiveTab(tab);
+            if (tab === "cypher" || tab === "benchmarks") {
+              setIsConsoleOpen(true);
+            }
+          }}
+          onBackToHero={() => setViewMode("hero")}
+          onTriggerChaos={handleTriggerChaos}
+          onResetSeed={handleResetSeed}
+          activeGraph={activeGraph}
+          isSeeding={isSeeding}
+        />
+
+        {/* Right Main Stage: TopBar + Operational Workspace */}
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#0A0A0E]">
+          {/* Top Command Bar */}
+          <SwarmTopBar
+            activeGraph={activeGraph}
+            onSelectGraph={handleSelectGraph}
+            onOpenConsole={() => setIsConsoleOpen(true)}
+            nodeCount={nodes.length}
+            edgeCount={edges.length}
+            falkorConnected={falkorConnected}
+            onSearchQuery={(q) => handleTriggerInvestigation(q)}
           />
-          <div className="flex-1 min-h-0">
-            <AgentTracePanel
-              events={events}
-              isStreaming={isStreaming}
-              currentAgent={currentAgent}
-              activeStage={activeStage}
-            />
+
+          {/* Operational Viewports */}
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 min-h-0 overflow-hidden">
+            {/* Left Pane (5 Cols): 1-Click Scenarios + Agent Trace Panel */}
+            <div className="lg:col-span-5 flex flex-col gap-3 min-h-0 h-full overflow-hidden">
+              <ScenarioSelector
+                scenarios={DEFAULT_SCENARIOS}
+                onTriggerScenario={handleTriggerInvestigation}
+                isLoading={isStreaming}
+              />
+              <div className="flex-1 min-h-0">
+                <AgentTracePanel
+                  events={events}
+                  isStreaming={isStreaming}
+                  currentAgent={currentAgent}
+                  activeStage={activeStage}
+                />
+              </div>
+            </div>
+
+            {/* Right Pane (7 Cols): Dual-Engine FalkorDB Graph Canvas 2.0 */}
+            <div className="lg:col-span-7 flex flex-col min-h-0 h-full overflow-hidden">
+              <GraphCanvas
+                nodes={nodes}
+                edges={edges}
+                highlightIds={highlightIds}
+                activeGraphName={activeGraph}
+                onRefresh={() => fetchGraphTopology(activeGraph)}
+                isLoading={isLoadingGraph}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Right Pane (7 Cols): Dual-Engine FalkorDB Graph Canvas 2.0 */}
-        <div className="lg:col-span-7 flex flex-col min-h-0 h-full overflow-hidden">
-          <GraphCanvas
-            nodes={nodes}
-            edges={edges}
-            highlightIds={highlightIds}
-            activeGraphName={activeGraph}
-            onRefresh={() => fetchGraphTopology(activeGraph)}
-            isLoading={isLoadingGraph}
-          />
-        </div>
+        {/* Architecture Tools Drawer (Benchmarks, openCypher REPL, Chaos) */}
+        <CypherConsole
+          isOpen={isConsoleOpen}
+          onClose={() => setIsConsoleOpen(false)}
+          activeGraphName={activeGraph}
+          onRefreshGraph={() => fetchGraphTopology(activeGraph)}
+        />
       </div>
-
-      {/* 3. FalkorDB Architecture Console (Benchmarks, openCypher REPL, Chaos) */}
-      <CypherConsole
-        isOpen={isConsoleOpen}
-        onClose={() => setIsConsoleOpen(false)}
-        activeGraphName={activeGraph}
-        onRefreshGraph={() => fetchGraphTopology(activeGraph)}
-      />
     </div>
   );
 }
