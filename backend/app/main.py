@@ -248,11 +248,26 @@ def execute_custom_cypher(payload: Dict[str, Any]):
     try:
         records, elapsed_ms = manager.query(graph_name, cypher)
         subgraph = manager.extract_subgraph(records, cypher=cypher)
+
+        def _clean_val(v: Any) -> Any:
+            if hasattr(v, "properties"):
+                return {**v.properties, "_label": getattr(v, "label", getattr(v, "labels", None))}
+            elif isinstance(v, (list, tuple)):
+                return [_clean_val(item) for item in v]
+            elif isinstance(v, dict):
+                return {k: _clean_val(val) for k, val in v.items()}
+            elif isinstance(v, (int, float, str, bool)) or v is None:
+                return v
+            return str(v)
+
+        sanitized_records = [_clean_val(row) for row in records]
+
         return {
             "graph_name": graph_name,
             "cypher_query": cypher,
             "execution_time_ms": round(elapsed_ms, 2),
             "record_count": len(records),
+            "records": sanitized_records,
             "subgraph": subgraph
         }
     except Exception as exc:

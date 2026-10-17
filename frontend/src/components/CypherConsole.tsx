@@ -259,26 +259,94 @@ export default function CypherConsole({
                   </select>
                 </div>
 
-                {/* Templates */}
+                {/* Templates based on selected namespace */}
                 <div className="flex gap-1.5 text-[10px] font-mono">
-                  <button
-                    onClick={() => setCustomCypher("MATCH path = (s:Service {name: 'ledger-db'})<-[:DEPENDS_ON*1..4]-(d:Service)\nRETURN [n IN nodes(path) | n.name] AS chain, length(path) AS depth\nORDER BY depth ASC")}
-                    className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
-                  >
-                    Blast Radius
-                  </button>
-                  <button
-                    onClick={() => setCustomCypher("MATCH (s:Service)<-[r:DEPENDS_ON]-(d:Service)\nRETURN s.name AS service, count(d) AS inbound_deps\nORDER BY inbound_deps DESC")}
-                    className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
-                  >
-                    Centrality
-                  </button>
-                  <button
-                    onClick={() => setCustomCypher("MATCH (adr:ADR)-[:GOVERNS]->(s:Service)\nRETURN adr.id, adr.title, s.name")}
-                    className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
-                  >
-                    ADR Governance
-                  </button>
+                  {selectedNamespace === "org_brain" && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setSelectedNamespace("org_brain");
+                          setCustomCypher("MATCH path = (s:Service {name: 'ledger-db'})<-[:DEPENDS_ON*1..4]-(d:Service)\nRETURN [n IN nodes(path) | n.name] AS chain, length(path) AS depth\nORDER BY depth ASC");
+                        }}
+                        className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
+                      >
+                        Blast Radius
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedNamespace("org_brain");
+                          setCustomCypher("MATCH (s:Service)<-[r:DEPENDS_ON]-(d:Service)\nRETURN s.name AS service, count(d) AS inbound_deps\nORDER BY inbound_deps DESC");
+                        }}
+                        className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
+                      >
+                        Centrality
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedNamespace("org_brain");
+                          setCustomCypher("MATCH (adr:ADR)-[:GOVERNS]->(s:Service)\nRETURN adr.id AS id, adr.title AS title, s.name AS service");
+                        }}
+                        className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
+                      >
+                        ADR Governance
+                      </button>
+                    </>
+                  )}
+
+                  {selectedNamespace === "procedural_memory" && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setSelectedNamespace("procedural_memory");
+                          setCustomCypher("MATCH (p:Pattern)-[r:RESOLVED_BY]->(s:RunbookStep)\nRETURN p.symptom_signature AS pattern, s.id AS step_id, s.action_type AS action, r.confidence AS confidence");
+                        }}
+                        className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:text-white"
+                      >
+                        Runbook Match
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedNamespace("procedural_memory");
+                          setCustomCypher("MATCH (i:Incident)-[r:AFFECTED_SERVICE]->(p:Pattern)\nRETURN i.id AS incident, i.title AS title, r.service_id AS affected_service, p.symptom_signature AS pattern");
+                        }}
+                        className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:text-white"
+                      >
+                        Incident History
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedNamespace("procedural_memory");
+                          setCustomCypher("MATCH (p:Pattern)\nRETURN p.id AS id, p.symptom_signature AS symptom, p.description AS description");
+                        }}
+                        className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:text-white"
+                      >
+                        All Patterns
+                      </button>
+                    </>
+                  )}
+
+                  {selectedNamespace === "blackboard_demo" && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setSelectedNamespace("blackboard_demo");
+                          setCustomCypher("MATCH (t:Task)\nRETURN t.id AS task, t.description AS description, t.status AS status");
+                        }}
+                        className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 hover:text-white"
+                      >
+                        Swarm Tasks
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedNamespace("blackboard_demo");
+                          setCustomCypher("MATCH (t:Task)-[:ASSIGNED_TO]->(f:Finding)-[:SUPPORTS]->(a:ProposedAction)\nRETURN f.agent_name AS agent, f.summary AS finding, a.action_type AS action, a.approved AS approved");
+                        }}
+                        className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 hover:text-white"
+                      >
+                        Findings & Actions
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -313,9 +381,15 @@ export default function CypherConsole({
                         <span>Latency: {cypherResult.execution_time_ms} ms</span>
                         <span>Records: {cypherResult.record_count}</span>
                       </div>
-                      <pre className="text-slate-300 text-[11px] whitespace-pre-wrap">
-                        {JSON.stringify(cypherResult.subgraph?.nodes || cypherResult, null, 2)}
-                      </pre>
+                      {cypherResult.record_count === 0 ? (
+                        <div className="text-amber-400/90 text-[11px] py-1">
+                          0 records matched in <code className="text-cyan-300 font-bold">{cypherResult.graph_name}</code>. Note: services and dependencies live in <code className="text-cyan-300 font-bold">org_brain</code>, while runbooks live in <code className="text-cyan-300 font-bold">procedural_memory</code>.
+                        </div>
+                      ) : (
+                        <pre className="text-slate-300 text-[11px] whitespace-pre-wrap">
+                          {JSON.stringify(cypherResult.records ?? cypherResult.subgraph?.nodes ?? cypherResult, null, 2)}
+                        </pre>
+                      )}
                     </div>
                   )}
                 </div>
