@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "stitch": {
+      "command": "cmd.exe",
+      "args": ["/c", "npx", "-y", "@_davideast/stitch-mcp", "proxy"],
+      "env": {
+        "STITCH_API_KEY": "${STITCH_API_KEY}"
+      }
+    },
+    "twentyfirst": {
+      "command": "cmd.exe",
+      "args": ["/c", "npx", "-y", "@21st-dev/magic@latest"],
+      "env": {
+        "API_KEY_21ST": "${API_KEY_21ST}"
+      }
+    }
+  }
+}
