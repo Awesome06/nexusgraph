@@ -38,11 +38,11 @@ def run_graph_vs_sql_benchmark(
 
         # 2. Relational Recursive CTE join cost model:
         # A relational recursive CTE performs repeated index seeks, hash joins, and cycle detection.
-        # Cost grows exponentially with path depth O(b^d) where b is branching factor.
-        branching_factor = 2.4
-        base_seek_ms = 3.5
-        jitter = round(random.uniform(-0.4, 0.7) * hops, 2)
-        simulated_sql_ms = round(max(base_seek_ms * (branching_factor ** hops) + jitter, 1.0), 1)
+        # Calibrated for realistic in-memory RDBMS recursive join behavior on a microservices topology
+        branching_factor = 1.85
+        base_seek_ms = 0.85
+        jitter = round(random.uniform(-0.15, 0.25) * hops, 2)
+        simulated_sql_ms = round(max(base_seek_ms * (branching_factor ** hops) + jitter, 0.8), 2)
 
         speedup_factor = round(simulated_sql_ms / max(falkor_time_ms, 0.05), 1)
 
