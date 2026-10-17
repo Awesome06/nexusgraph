@@ -209,23 +209,44 @@ def find_shortest_ownership_path(
     manager = manager or get_falkor_manager()
     cypher = """
     MATCH (p:Person {name: $person_name}), (s:Service {name: $service_name})
-    MATCH path = shortestPath((p)-[*..6]-(s))
+    WITH shortestPath((p)-[*..6]->(s)) AS path
     RETURN [n IN nodes(path) | coalesce(n.name, n.title, n.sha)] AS node_trace,
-           [r IN relationships(path) | type(r)] AS rel_trace
+           [r IN relationships(path) | type(r)] AS rel_trace,
+           nodes(path) AS path_nodes,
+           relationships(path) AS path_edges
     """
     params = {"person_name": person_name, "service_name": service_name}
-    raw_records, exec_ms = manager.query("org_brain", cypher, params)
+    try:
+        raw_records, exec_ms = manager.query("org_brain", cypher, params)
+        if not raw_records or not raw_records[0] or not raw_records[0][0]:
+            cypher_rev = """
+            MATCH (p:Person {name: $person_name}), (s:Service {name: $service_name})
+            WITH shortestPath((s)-[*..6]->(p)) AS path
+            RETURN [n IN nodes(path) | coalesce(n.name, n.title, n.sha)] AS node_trace,
+                   [r IN relationships(path) | type(r)] AS rel_trace,
+                   nodes(path) AS path_nodes,
+                   relationships(path) AS path_edges
+            """
+            raw_records, exec_ms = manager.query("org_brain", cypher_rev, params)
+    except Exception as exc:
+        logger.warning("shortestPath traversal query fallback: %s", exc)
+        raw_records, exec_ms = [], 1.0
 
     node_trace: List[str] = []
     rel_trace: List[str] = []
     highlight_nodes: List[str] = [person_name, service_name]
+    all_path_entities: List[Any] = []
 
     if raw_records and len(raw_records) > 0 and len(raw_records[0]) >= 2:
         node_trace = list(raw_records[0][0] or [])
         rel_trace = list(raw_records[0][1] or [])
         highlight_nodes = [str(x) for x in node_trace]
+        if len(raw_records[0]) > 2 and raw_records[0][2]:
+            all_path_entities.extend(raw_records[0][2])
+        if len(raw_records[0]) > 3 and raw_records[0][3]:
+            all_path_entities.extend(raw_records[0][3])
 
-    subgraph = manager.extract_subgraph(raw_records, cypher=cypher.strip(), highlight_ids=highlight_nodes)
+    subgraph = manager.extract_subgraph(all_path_entities or raw_records, cypher=cypher.strip(), highlight_ids=highlight_nodes)
 
     path_description = " -> ".join(
         f"{node_trace[i]} -[{rel_trace[i] if i < len(rel_trace) else 'CONNECTED'}]->"

@@ -1,7 +1,28 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useMemo } from "react";
-import { ZoomIn, ZoomOut, Maximize2, RefreshCw, Layers, Info, Filter, Sparkles } from "lucide-react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import {
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RefreshCw,
+  Layers,
+  Info,
+  Filter,
+  Sparkles,
+  GitBranch,
+  Target,
+  Activity,
+  X,
+  ExternalLink,
+  Shield,
+  Clock,
+  Compass,
+  ArrowRight,
+  ChevronRight,
+  Database,
+  Cpu,
+} from "lucide-react";
 
 export interface GraphNode {
   id: string;
@@ -16,6 +37,8 @@ export interface GraphNode {
   y?: number;
   vx?: number;
   vy?: number;
+  targetX?: number;
+  targetY?: number;
 }
 
 export interface GraphEdge {
@@ -37,20 +60,22 @@ interface GraphCanvasProps {
   isLoading?: boolean;
 }
 
-const COLOR_MAP: Record<string, string> = {
-  Service: "#3b82f6",
-  Person: "#10b981",
-  Team: "#8b5cf6",
-  Commit: "#f59e0b",
-  ADR: "#ec4899",
-  Document: "#64748b",
-  Incident: "#ef4444",
-  Pattern: "#06b6d4",
-  RunbookStep: "#22c55e",
-  Task: "#a855f7",
-  Finding: "#eab308",
-  ProposedAction: "#f97316",
+const COLOR_MAP: Record<string, { bg: string; border: string; glow: string }> = {
+  Service: { bg: "#2563eb", border: "#60a5fa", glow: "rgba(59, 130, 246, 0.4)" },
+  Person: { bg: "#059669", border: "#34d399", glow: "rgba(16, 185, 129, 0.4)" },
+  Team: { bg: "#7c3aed", border: "#a78bfa", glow: "rgba(139, 92, 246, 0.4)" },
+  Commit: { bg: "#d97706", border: "#fbbf24", glow: "rgba(245, 158, 11, 0.4)" },
+  ADR: { bg: "#db2777", border: "#f472b6", glow: "rgba(236, 72, 153, 0.4)" },
+  Document: { bg: "#475569", border: "#94a3b8", glow: "rgba(100, 116, 139, 0.3)" },
+  Incident: { bg: "#dc2626", border: "#f87171", glow: "rgba(239, 68, 68, 0.5)" },
+  Pattern: { bg: "#0891b2", border: "#22d3ee", glow: "rgba(6, 182, 212, 0.4)" },
+  RunbookStep: { bg: "#16a34a", border: "#4ade80", glow: "rgba(34, 197, 94, 0.4)" },
+  Task: { bg: "#9333ea", border: "#c084fc", glow: "rgba(168, 85, 247, 0.4)" },
+  Finding: { bg: "#ca8a04", border: "#facc15", glow: "rgba(234, 179, 8, 0.4)" },
+  ProposedAction: { bg: "#ea580c", border: "#fb923c", glow: "rgba(249, 115, 22, 0.4)" },
 };
+
+type LayoutMode = "force" | "dag" | "radial";
 
 export default function GraphCanvas({
   nodes,
@@ -61,8 +86,12 @@ export default function GraphCanvas({
   isLoading = false,
 }: GraphCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const minimapRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [filterLabel, setFilterLabel] = useState<string>("ALL");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("dag");
   const [zoom, setZoom] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -81,35 +110,175 @@ export default function GraphCanvas({
     return Array.from(s);
   }, [nodes]);
 
-  // Synchronize internal node positions with incoming props
+  // Compute Layout Target Positions
+  const applyLayout = useCallback(
+    (mode: LayoutMode, currentNodes: GraphNode[], currentEdges: GraphEdge[], width: number, height: number) => {
+      const positions = new Map<string, { x: number; y: number }>();
+      const cx = width / 2;
+      const cy = height / 2;
+
+      if (mode === "dag") {
+        // Hierarchical DAG: Layering based on dependencies
+        // Services with no incoming depends_on are top-level (e.g. api-gateway)
+        // Services with outgoing are lower (e.g. ledger-db)
+        const layers: Record<string, number> = {};
+        
+        currentNodes.forEach((n) => {
+          if (n.label === "Service") {
+            if (n.id.includes("gateway") || n.id.includes("gw")) layers[n.id] = 0;
+            else if (n.id.includes("auth") || n.id.includes("payment")) layers[n.id] = 1;
+            else if (n.id.includes("fraud") || n.id.includes("ledger") || n.id.includes("notif")) layers[n.id] = 2;
+            else layers[n.id] = 1;
+          } else if (n.label === "Commit") {
+            layers[n.id] = 2.8;
+          } else if (n.label === "Person") {
+            layers[n.id] = 3.6;
+          } else if (n.label === "Team") {
+            layers[n.id] = -0.8;
+          } else if (n.label === "ADR") {
+            layers[n.id] = 0.5;
+          } else if (n.label === "Incident" || n.label === "Pattern") {
+            layers[n.id] = 0;
+          } else if (n.label === "RunbookStep") {
+            layers[n.id] = 1.5;
+          } else {
+            layers[n.id] = 1.8;
+          }
+        });
+
+        // Group by assigned layer
+        const layerGroups: Record<number, GraphNode[]> = {};
+        currentNodes.forEach((n) => {
+          const l = layers[n.id] ?? 1.5;
+          if (!layerGroups[l]) layerGroups[l] = [];
+          layerGroups[l].push(n);
+        });
+
+        const sortedLayerKeys = Object.keys(layerGroups).map(Number).sort((a, b) => a - b);
+        const totalLayers = sortedLayerKeys.length;
+        const layerSpacingY = Math.min(140, (height - 180) / Math.max(1, totalLayers));
+
+        sortedLayerKeys.forEach((lKey, layerIdx) => {
+          const group = layerGroups[lKey];
+          const rowY = 90 + layerIdx * layerSpacingY;
+          const spacingX = Math.min(160, (width - 120) / Math.max(1, group.length));
+          const startX = cx - ((group.length - 1) * spacingX) / 2;
+
+          group.forEach((node, nodeIdx) => {
+            positions.set(node.id, {
+              x: startX + nodeIdx * spacingX,
+              y: rowY,
+            });
+          });
+        });
+      } else if (mode === "radial") {
+        // Concentric Rings around central critical hub
+        // Center: payment-engine / high centrality
+        const hubId = currentNodes.find((n) => n.id === "payment-engine")?.id || currentNodes[0]?.id;
+        positions.set(hubId, { x: cx, y: cy });
+
+        const ring1: GraphNode[] = [];
+        const ring2: GraphNode[] = [];
+        const ring3: GraphNode[] = [];
+
+        currentNodes.forEach((n) => {
+          if (n.id === hubId) return;
+          if (n.label === "Service") ring1.push(n);
+          else if (n.label === "ADR" || n.label === "Commit" || n.label === "Incident") ring2.push(n);
+          else ring3.push(n);
+        });
+
+        const placeRing = (group: GraphNode[], radius: number) => {
+          group.forEach((node, idx) => {
+            const angle = (idx / Math.max(1, group.length)) * 2 * Math.PI - Math.PI / 2;
+            positions.set(node.id, {
+              x: cx + Math.cos(angle) * radius,
+              y: cy + Math.sin(angle) * radius,
+            });
+          });
+        };
+
+        placeRing(ring1, 140);
+        placeRing(ring2, 240);
+        placeRing(ring3, 330);
+      }
+
+      return positions;
+    },
+    []
+  );
+
+  // Synchronize internal node positions with incoming props & layout mode
   useEffect(() => {
+    const canvas = canvasRef.current;
+    const width = canvas ? canvas.width : 900;
+    const height = canvas ? canvas.height : 600;
+
     const existing = simNodesRef.current;
     const nextMap = new Map<string, GraphNode>();
-    const width = 800;
-    const height = 600;
+    const targets = applyLayout(layoutMode, nodes, edges, width, height);
 
     nodes.forEach((n, idx) => {
       const prev = existing.get(n.id);
-      if (prev && prev.x !== undefined && prev.y !== undefined) {
-        nextMap.set(n.id, { ...n, x: prev.x, y: prev.y, vx: prev.vx || 0, vy: prev.vy || 0 });
-      } else {
-        // Distribute in circular shell
-        const angle = (idx / Math.max(1, nodes.length)) * 2 * Math.PI;
-        const radius = 180 + (idx % 3) * 60;
-        nextMap.set(n.id, {
-          ...n,
-          x: width / 2 + Math.cos(angle) * radius + (Math.random() - 0.5) * 40,
-          y: height / 2 + Math.sin(angle) * radius + (Math.random() - 0.5) * 40,
-          vx: 0,
-          vy: 0,
-        });
+      const target = targets.get(n.id);
+
+      let x = prev?.x;
+      let y = prev?.y;
+
+      if (x === undefined || y === undefined) {
+        if (target) {
+          x = target.x;
+          y = target.y;
+        } else {
+          const angle = (idx / Math.max(1, nodes.length)) * 2 * Math.PI;
+          const radius = 180 + (idx % 3) * 60;
+          x = width / 2 + Math.cos(angle) * radius;
+          y = height / 2 + Math.sin(angle) * radius;
+        }
       }
+
+      nextMap.set(n.id, {
+        ...n,
+        x,
+        y,
+        vx: prev?.vx || 0,
+        vy: prev?.vy || 0,
+        targetX: target?.x,
+        targetY: target?.y,
+      });
     });
 
     simNodesRef.current = nextMap;
-  }, [nodes]);
+  }, [nodes, edges, layoutMode, applyLayout]);
 
-  // Force-directed physics loop
+  // Center on Highlighted Path when highlighted nodes change
+  useEffect(() => {
+    if (highlightIds.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const highlightNodes = highlightIds
+      .map((id) => simNodesRef.current.get(id))
+      .filter((n): n is GraphNode => !!n && n.x !== undefined && n.y !== undefined);
+
+    if (highlightNodes.length > 0) {
+      const minX = Math.min(...highlightNodes.map((n) => n.x!));
+      const maxX = Math.max(...highlightNodes.map((n) => n.x!));
+      const minY = Math.min(...highlightNodes.map((n) => n.y!));
+      const maxY = Math.max(...highlightNodes.map((n) => n.y!));
+
+      const pathCenterX = (minX + maxX) / 2;
+      const pathCenterY = (minY + maxY) / 2;
+
+      // Smooth pan to center
+      setPan({
+        x: canvas.width / 2 - pathCenterX * zoom,
+        y: canvas.height / 2 - pathCenterY * zoom,
+      });
+    }
+  }, [highlightIds, zoom]);
+
+  // Main Canvas Render & Animation Loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -120,85 +289,86 @@ export default function GraphCanvas({
 
     const render = () => {
       if (!running) return;
-      pulseRef.current = (pulseRef.current + 0.05) % (Math.PI * 2);
+      pulseRef.current = (pulseRef.current + 0.04) % (Math.PI * 2);
 
       const width = canvas.width;
       const height = canvas.height;
       const simNodes = Array.from(simNodesRef.current.values());
 
-      // 1. Force Simulation Steps (Repulsion, Springs, Center Gravity)
-      const kRepulse = 3500;
-      const kSpring = 0.04;
-      const targetDist = 130;
-      const damping = 0.88;
+      // 1. Force / Interpolation Physics
+      if (layoutMode === "force") {
+        const kRepulse = 3800;
+        const kSpring = 0.04;
+        const targetDist = 140;
 
-      // Repulsion between all pairs
-      for (let i = 0; i < simNodes.length; i++) {
-        for (let j = i + 1; j < simNodes.length; j++) {
-          const n1 = simNodes[i];
-          const n2 = simNodes[j];
-          const dx = (n2.x || 0) - (n1.x || 0);
-          const dy = (n2.y || 0) - (n1.y || 0);
-          const distSq = dx * dx + dy * dy + 1;
-          const dist = Math.sqrt(distSq);
-          if (dist < 400) {
-            const force = kRepulse / distSq;
+        // Repulsion between node pairs
+        for (let i = 0; i < simNodes.length; i++) {
+          for (let j = i + 1; j < simNodes.length; j++) {
+            const n1 = simNodes[i];
+            const n2 = simNodes[j];
+            const dx = (n2.x || 0) - (n1.x || 0);
+            const dy = (n2.y || 0) - (n1.y || 0);
+            const distSq = dx * dx + dy * dy + 1;
+            const dist = Math.sqrt(distSq);
+            if (dist < 360) {
+              const force = kRepulse / distSq;
+              const fx = (dx / dist) * force;
+              const fy = (dy / dist) * force;
+              if (dragNode?.id !== n1.id) {
+                n1.vx = (n1.vx || 0) - fx;
+                n1.vy = (n1.vy || 0) - fy;
+              }
+              if (dragNode?.id !== n2.id) {
+                n2.vx = (n2.vx || 0) + fx;
+                n2.vy = (n2.vy || 0) + fy;
+              }
+            }
+          }
+        }
+
+        // Spring along edges
+        edges.forEach((edge) => {
+          const src = simNodesRef.current.get(edge.source);
+          const tgt = simNodesRef.current.get(edge.target);
+          if (src && tgt) {
+            const dx = (tgt.x || 0) - (src.x || 0);
+            const dy = (tgt.y || 0) - (src.y || 0);
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const displacement = dist - targetDist;
+            const force = displacement * kSpring;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
-            if (dragNode?.id !== n1.id) {
-              n1.vx = (n1.vx || 0) - fx;
-              n1.vy = (n1.vy || 0) - fy;
+
+            if (dragNode?.id !== src.id) {
+              src.vx = (src.vx || 0) + fx;
+              src.vy = (src.vy || 0) + fy;
             }
-            if (dragNode?.id !== n2.id) {
-              n2.vx = (n2.vx || 0) + fx;
-              n2.vy = (n2.vy || 0) + fy;
+            if (dragNode?.id !== tgt.id) {
+              tgt.vx = (tgt.vx || 0) - fx;
+              tgt.vy = (tgt.vy || 0) - fy;
             }
           }
-        }
+        });
+
+        // Update positions with center gravity
+        const damping = 0.86;
+        simNodes.forEach((node) => {
+          if (dragNode?.id === node.id) return;
+          node.vx = ((node.vx || 0) + (width / 2 - (node.x || 0)) * 0.001) * damping;
+          node.vy = ((node.vy || 0) + (height / 2 - (node.y || 0)) * 0.001) * damping;
+          node.x = (node.x || 0) + (node.vx || 0);
+          node.y = (node.y || 0) + (node.vy || 0);
+        });
+      } else {
+        // Smoothly interpolate towards target layout positions
+        simNodes.forEach((node) => {
+          if (dragNode?.id === node.id) return;
+          if (node.targetX !== undefined && node.targetY !== undefined) {
+            node.x = (node.x || 0) + (node.targetX - (node.x || 0)) * 0.12;
+            node.y = (node.y || 0) + (node.targetY - (node.y || 0)) * 0.12;
+          }
+        });
       }
-
-      // Spring force along edges
-      edges.forEach((edge) => {
-        const src = simNodesRef.current.get(edge.source);
-        const tgt = simNodesRef.current.get(edge.target);
-        if (src && tgt) {
-          const dx = (tgt.x || 0) - (src.x || 0);
-          const dy = (tgt.y || 0) - (src.y || 0);
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const displacement = dist - targetDist;
-          const force = displacement * kSpring;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-
-          if (dragNode?.id !== src.id) {
-            src.vx = (src.vx || 0) + fx;
-            src.vy = (src.vy || 0) + fy;
-          }
-          if (dragNode?.id !== tgt.id) {
-            tgt.vx = (tgt.vx || 0) - fx;
-            tgt.vy = (tgt.vy || 0) - fy;
-          }
-        }
-      });
-
-      // Center gravity & velocity dampening with numerical stability clamping
-      const cx = width / 2;
-      const cy = height / 2;
-      const maxVelocity = 14;
-      simNodes.forEach((n) => {
-        if (dragNode?.id !== n.id) {
-          const toCenterX = (cx - (n.x || cx)) * 0.003;
-          const toCenterY = (cy - (n.y || cy)) * 0.003;
-          const rawVx = ((n.vx || 0) + toCenterX) * damping;
-          const rawVy = ((n.vy || 0) + toCenterY) * damping;
-
-          n.vx = Math.max(-maxVelocity, Math.min(maxVelocity, rawVx));
-          n.vy = Math.max(-maxVelocity, Math.min(maxVelocity, rawVy));
-
-          n.x = (n.x || cx) + (n.vx || 0);
-          n.y = (n.y || cy) + (n.vy || 0);
-        }
-      });
 
       // 2. Clear canvas & apply pan/zoom
       ctx.clearRect(0, 0, width, height);
@@ -206,110 +376,177 @@ export default function GraphCanvas({
       ctx.translate(pan.x, pan.y);
       ctx.scale(zoom, zoom);
 
-      // Background graph grid dots
-      ctx.fillStyle = "rgba(255, 255, 255, 0.03)";
+      // Cybernetic Ambient Grid Dots
+      ctx.fillStyle = "rgba(148, 163, 184, 0.06)";
       const gridSize = 40;
-      for (let x = -width; x < width * 2; x += gridSize) {
-        for (let y = -height; y < height * 2; y += gridSize) {
+      const startGridX = Math.floor((-pan.x / zoom - width) / gridSize) * gridSize;
+      const endGridX = Math.floor((-pan.x / zoom + width * 2) / gridSize) * gridSize;
+      const startGridY = Math.floor((-pan.y / zoom - height) / gridSize) * gridSize;
+      const endGridY = Math.floor((-pan.y / zoom + height * 2) / gridSize) * gridSize;
+
+      for (let gx = startGridX; gx < endGridX; gx += gridSize) {
+        for (let gy = startGridY; gy < endGridY; gy += gridSize) {
           ctx.beginPath();
-          ctx.arc(x, y, 1, 0, Math.PI * 2);
+          ctx.arc(gx, gy, 1.2, 0, Math.PI * 2);
           ctx.fill();
         }
       }
 
       const hasHighlights = highlightIds.length > 0;
 
-      // 3. Render Edges
-      edges.forEach((edge) => {
+      // 3. Render Edges (Curved Bezier with Directional Arrows & Particle Glow)
+      edges.forEach((edge, edgeIdx) => {
         const src = simNodesRef.current.get(edge.source);
         const tgt = simNodesRef.current.get(edge.target);
-        if (!src || !tgt) return;
+        if (!src || !tgt || src.x === undefined || src.y === undefined || tgt.x === undefined || tgt.y === undefined) {
+          return;
+        }
 
         const isEdgeHighlighted =
           edge.highlighted ||
           (highlightIds.includes(src.id) && highlightIds.includes(tgt.id));
 
+        const dx = tgt.x - src.x;
+        const dy = tgt.y - src.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+        // Slight quadratic curve offset to prevent overlapping bidirectional edges
+        const normalX = -dy / dist;
+        const normalY = dx / dist;
+        const curveOffset = (edgeIdx % 2 === 0 ? 1 : -1) * Math.min(25, dist * 0.12);
+        const midX = (src.x + tgt.x) / 2 + normalX * curveOffset;
+        const midY = (src.y + tgt.y) / 2 + normalY * curveOffset;
+
+        // Calculate node radius to stop edge before entering target node boundary
+        const tgtRadius = (tgt.val || 1.0) * 16 + 6;
+        const arrowAngle = Math.atan2(tgt.y - midY, tgt.x - midX);
+        const arrowTipX = tgt.x - Math.cos(arrowAngle) * tgtRadius;
+        const arrowTipY = tgt.y - Math.sin(arrowAngle) * tgtRadius;
+
+        // Draw Curved Path
         ctx.beginPath();
-        ctx.moveTo(src.x || 0, src.y || 0);
-        ctx.lineTo(tgt.x || 0, tgt.y || 0);
+        ctx.moveTo(src.x, src.y);
+        ctx.quadraticCurveTo(midX, midY, arrowTipX, arrowTipY);
 
         if (isEdgeHighlighted) {
-          // Glowing electric path
-          ctx.strokeStyle = "#22d3ee";
-          ctx.lineWidth = 3.5;
-          ctx.shadowColor = "#06b6d4";
-          ctx.shadowBlur = 14;
+          // Electric Cyan / Gold Neon Stroke
+          ctx.strokeStyle = "#06b6d4";
+          ctx.lineWidth = 3.0;
+          ctx.shadowColor = "#22d3ee";
+          ctx.shadowBlur = 12;
           ctx.stroke();
           ctx.shadowBlur = 0;
 
-          // Animated pulsing particle along edge
-          const t = (Math.sin(pulseRef.current * 1.5) + 1) / 2;
-          const px = (src.x || 0) + ((tgt.x || 0) - (src.x || 0)) * t;
-          const py = (src.y || 0) + ((tgt.y || 0) - (src.y || 0)) * t;
-          ctx.beginPath();
-          ctx.arc(px, py, 4, 0, Math.PI * 2);
-          ctx.fillStyle = "#fef08a";
-          ctx.shadowColor = "#facc15";
-          ctx.shadowBlur = 10;
-          ctx.fill();
-          ctx.shadowBlur = 0;
+          // Animated Electric Pulses traveling along quadratic curve
+          const t1 = ((pulseRef.current * 0.8) % (Math.PI * 2)) / (Math.PI * 2);
+          const t2 = ((pulseRef.current * 0.8 + Math.PI) % (Math.PI * 2)) / (Math.PI * 2);
+          const startX = src.x;
+          const startY = src.y;
+
+          [t1, t2].forEach((t) => {
+            // Quadratic Bezier formula: B(t) = (1-t)^2*P0 + 2(1-t)t*P1 + t^2*P2
+            const px = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * midX + t * t * arrowTipX;
+            const py = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * midY + t * t * arrowTipY;
+
+            ctx.beginPath();
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#fef08a";
+            ctx.shadowColor = "#facc15";
+            ctx.shadowBlur = 10;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          });
         } else {
-          ctx.strokeStyle = hasHighlights ? "rgba(71, 85, 105, 0.25)" : "rgba(100, 116, 139, 0.45)";
-          ctx.lineWidth = 1.2;
+          ctx.strokeStyle = hasHighlights ? "rgba(71, 85, 105, 0.25)" : "rgba(100, 116, 139, 0.4)";
+          ctx.lineWidth = 1.4;
           ctx.stroke();
         }
 
-        // Draw edge relationship text at midpoint
-        const midX = ((src.x || 0) + (tgt.x || 0)) / 2;
-        const midY = ((src.y || 0) + (tgt.y || 0)) / 2;
-        ctx.font = "9px ui-monospace, monospace";
-        ctx.fillStyle = isEdgeHighlighted ? "#67e8f9" : "rgba(148, 163, 184, 0.5)";
-        ctx.textAlign = "center";
-        ctx.fillText(edge.type || "", midX, midY - 4);
+        // Draw Directional Arrowhead
+        const arrowSize = isEdgeHighlighted ? 8 : 6;
+        ctx.beginPath();
+        ctx.moveTo(arrowTipX, arrowTipY);
+        ctx.lineTo(
+          arrowTipX - arrowSize * Math.cos(arrowAngle - Math.PI / 6),
+          arrowTipY - arrowSize * Math.sin(arrowAngle - Math.PI / 6)
+        );
+        ctx.lineTo(
+          arrowTipX - arrowSize * Math.cos(arrowAngle + Math.PI / 6),
+          arrowTipY - arrowSize * Math.sin(arrowAngle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fillStyle = isEdgeHighlighted ? "#22d3ee" : "rgba(148, 163, 184, 0.6)";
+        ctx.fill();
+
+        // Edge Relationship Pill Badge at curve midpoint
+        if (edge.type && (isEdgeHighlighted || !hasHighlights || zoom > 0.85)) {
+          const badgeText = edge.type;
+          ctx.font = "8px ui-monospace, SFMono-Regular, monospace";
+          const textMetrics = ctx.measureText(badgeText);
+          const badgeW = textMetrics.width + 8;
+          const badgeH = 13;
+
+          ctx.fillStyle = isEdgeHighlighted ? "rgba(8, 24, 38, 0.9)" : "rgba(15, 23, 42, 0.85)";
+          ctx.strokeStyle = isEdgeHighlighted ? "rgba(34, 211, 238, 0.6)" : "rgba(71, 85, 105, 0.4)";
+          ctx.lineWidth = 1;
+
+          ctx.beginPath();
+          ctx.roundRect(midX - badgeW / 2, midY - badgeH / 2, badgeW, badgeH, 3);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = isEdgeHighlighted ? "#67e8f9" : "rgba(203, 213, 225, 0.75)";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(badgeText, midX, midY);
+        }
       });
 
       // 4. Render Nodes
       simNodes.forEach((node) => {
-        // Label filter check
         if (filterLabel !== "ALL" && node.label !== filterLabel) {
           return;
         }
 
         const isHighlighted = highlightIds.includes(node.id);
         const isSelected = selectedNode?.id === node.id;
-        const radius = (node.val || 1.0) * 14;
-        const baseColor = node.color || COLOR_MAP[node.label] || "#94a3b8";
+        const radius = (node.val || 1.0) * 16;
+        const colorCfg = COLOR_MAP[node.label] || { bg: "#475569", border: "#94a3b8", glow: "rgba(148, 163, 184, 0.3)" };
 
-        // Glowing pulse aura for highlighted nodes
-        if (isHighlighted) {
-          const auraRadius = radius + 8 + Math.sin(pulseRef.current) * 4;
+        const isDegraded = node.properties?.status === "DEGRADED" || node.properties?.status === "UNHEALTHY";
+
+        // Pulsing Aura Ring for Highlighted Nodes
+        if (isHighlighted || isDegraded) {
+          const auraRadius = radius + 8 + Math.sin(pulseRef.current * 1.5) * 4;
           ctx.beginPath();
           ctx.arc(node.x || 0, node.y || 0, auraRadius, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(6, 182, 212, 0.22)";
+          ctx.fillStyle = isDegraded ? "rgba(239, 68, 68, 0.25)" : colorCfg.glow;
           ctx.fill();
 
           ctx.beginPath();
-          ctx.arc(node.x || 0, node.y || 0, auraRadius + 4, 0, Math.PI * 2);
-          ctx.strokeStyle = "rgba(34, 211, 238, 0.6)";
+          ctx.arc(node.x || 0, node.y || 0, auraRadius + 2, 0, Math.PI * 2);
+          ctx.strokeStyle = isDegraded ? "#ef4444" : "#22d3ee";
           ctx.lineWidth = 1.5;
           ctx.stroke();
         }
 
-        // Selected halo
+        // Selection Halo
         if (isSelected) {
           ctx.beginPath();
-          ctx.arc(node.x || 0, node.y || 0, radius + 5, 0, Math.PI * 2);
+          ctx.arc(node.x || 0, node.y || 0, radius + 6, 0, Math.PI * 2);
           ctx.strokeStyle = "#fbbf24";
           ctx.lineWidth = 2.5;
+          ctx.setLineDash([4, 3]);
           ctx.stroke();
+          ctx.setLineDash([]);
         }
 
-        // Node circle
+        // Node Body Circle
         ctx.beginPath();
         ctx.arc(node.x || 0, node.y || 0, radius, 0, Math.PI * 2);
-        ctx.fillStyle = baseColor;
+        ctx.fillStyle = isDegraded ? "#b91c1c" : colorCfg.bg;
         if (isHighlighted) {
-          ctx.shadowColor = "#22d3ee";
+          ctx.shadowColor = isDegraded ? "#ef4444" : "#22d3ee";
           ctx.shadowBlur = 18;
         } else if (hasHighlights) {
           ctx.globalAlpha = 0.45;
@@ -318,25 +555,54 @@ export default function GraphCanvas({
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1.0;
 
-        // Inner border
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = isHighlighted ? "#ffffff" : "rgba(255, 255, 255, 0.25)";
+        // Node Border
+        ctx.lineWidth = 2.0;
+        ctx.strokeStyle = isHighlighted ? "#ffffff" : isDegraded ? "#fca5a5" : colorCfg.border;
         ctx.stroke();
 
-        // Node text label
+        // Node Glyph / Monogram inside circle
+        ctx.font = `bold ${Math.round(radius * 0.85)}px ui-monospace, sans-serif`;
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const glyph = (node.label[0] || "E").toUpperCase();
+        ctx.fillText(glyph, node.x || 0, (node.y || 0) + 1);
+
+        // Node Title Tag (Below node)
         const displayName = node.name || node.id;
         ctx.font = isHighlighted ? "bold 11px Inter, sans-serif" : "10px Inter, sans-serif";
-        ctx.fillStyle = isHighlighted ? "#ffffff" : "#cbd5e1";
         ctx.textAlign = "center";
-        ctx.fillText(displayName, node.x || 0, (node.y || 0) + radius + 14);
+        ctx.textBaseline = "top";
 
-        // Small badge for node type
+        // Label Background Tag
+        const textMetrics = ctx.measureText(displayName);
+        const tagW = textMetrics.width + 10;
+        const tagH = 15;
+        const tagY = (node.y || 0) + radius + 6;
+
+        ctx.fillStyle = isHighlighted ? "rgba(8, 24, 38, 0.95)" : "rgba(15, 23, 42, 0.85)";
+        ctx.strokeStyle = isHighlighted ? "rgba(34, 211, 238, 0.6)" : "rgba(51, 65, 85, 0.6)";
+        ctx.lineWidth = 1;
+
+        ctx.beginPath();
+        ctx.roundRect((node.x || 0) - tagW / 2, tagY, tagW, tagH, 3);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isHighlighted ? "#ffffff" : "#cbd5e1";
+        ctx.fillText(displayName, node.x || 0, tagY + 2);
+
+        // Small Type Badge
         ctx.font = "8px ui-monospace, monospace";
         ctx.fillStyle = isHighlighted ? "#67e8f9" : "rgba(148, 163, 184, 0.7)";
-        ctx.fillText(node.label.toUpperCase(), node.x || 0, (node.y || 0) + radius + 24);
+        ctx.fillText(node.label.toUpperCase(), node.x || 0, tagY + tagH + 2);
       });
 
       ctx.restore();
+
+      // 5. Update Minimap
+      renderMinimap(simNodes, width, height);
+
       animFrameRef.current = requestAnimationFrame(render);
     };
 
@@ -348,28 +614,77 @@ export default function GraphCanvas({
         cancelAnimationFrame(animFrameRef.current);
       }
     };
-  }, [edges, highlightIds, selectedNode, filterLabel, zoom, pan, dragNode]);
+  }, [edges, filterLabel, highlightIds, layoutMode, pan, selectedNode, zoom, dragNode]);
 
-  // Mouse interaction: Node dragging and Canvas panning
+  // Minimap Rendering Function
+  const renderMinimap = (simNodes: GraphNode[], canvasW: number, canvasH: number) => {
+    const mini = minimapRef.current;
+    if (!mini) return;
+    const miniCtx = mini.getContext("2d");
+    if (!miniCtx) return;
+
+    const mW = mini.width;
+    const mH = mini.height;
+
+    miniCtx.clearRect(0, 0, mW, mH);
+
+    // Compute bounding box of all nodes
+    let minX = 0, maxX = canvasW, minY = 0, maxY = canvasH;
+    simNodes.forEach((n) => {
+      if (n.x !== undefined && n.y !== undefined) {
+        minX = Math.min(minX, n.x - 40);
+        maxX = Math.max(maxX, n.x + 40);
+        minY = Math.min(minY, n.y - 40);
+        maxY = Math.max(maxY, n.y + 40);
+      }
+    });
+
+    const graphW = Math.max(1, maxX - minX);
+    const graphH = Math.max(1, maxY - minY);
+    const scale = Math.min((mW - 12) / graphW, (mH - 12) / graphH);
+
+    // Draw dots for each node
+    simNodes.forEach((n) => {
+      if (n.x === undefined || n.y === undefined) return;
+      const mx = 6 + (n.x - minX) * scale;
+      const my = 6 + (n.y - minY) * scale;
+      const isHl = highlightIds.includes(n.id);
+
+      miniCtx.beginPath();
+      miniCtx.arc(mx, my, isHl ? 3.5 : 2, 0, Math.PI * 2);
+      miniCtx.fillStyle = isHl ? "#22d3ee" : COLOR_MAP[n.label]?.border || "#94a3b8";
+      miniCtx.fill();
+    });
+
+    // Draw camera viewport rectangle
+    const viewLeft = 6 + (-pan.x / zoom - minX) * scale;
+    const viewTop = 6 + (-pan.y / zoom - minY) * scale;
+    const viewW = (canvasW / zoom) * scale;
+    const viewH = (canvasH / zoom) * scale;
+
+    miniCtx.strokeStyle = "rgba(6, 182, 212, 0.7)";
+    miniCtx.lineWidth = 1.2;
+    miniCtx.strokeRect(viewLeft, viewTop, viewW, viewH);
+  };
+
+  // Canvas Mouse Interactions (Dragging, Panning, Selecting)
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const clickX = (e.clientX - rect.left - pan.x) / zoom;
-    const clickY = (e.clientY - rect.top - pan.y) / zoom;
+    const mouseX = (e.clientX - rect.left - pan.x) / zoom;
+    const mouseY = (e.clientY - rect.top - pan.y) / zoom;
 
     // Check if clicked on a node
-    const simNodes = Array.from(simNodesRef.current.values());
-    const hit = simNodes.find((n) => {
-      const radius = (n.val || 1.0) * 14;
-      const dx = clickX - (n.x || 0);
-      const dy = clickY - (n.y || 0);
-      return Math.sqrt(dx * dx + dy * dy) <= radius + 5;
+    const clicked = Array.from(simNodesRef.current.values()).find((n) => {
+      if (n.x === undefined || n.y === undefined) return false;
+      const dist = Math.sqrt((n.x - mouseX) ** 2 + (n.y - mouseY) ** 2);
+      return dist <= (n.val || 1.0) * 16 + 6;
     });
 
-    if (hit) {
-      setDragNode(hit);
-      setSelectedNode(hit);
+    if (clicked) {
+      setDragNode(clicked);
+      setSelectedNode(clicked);
     } else {
       setIsDragging(true);
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -381,12 +696,12 @@ export default function GraphCanvas({
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      const newX = (e.clientX - rect.left - pan.x) / zoom;
-      const newY = (e.clientY - rect.top - pan.y) / zoom;
-      dragNode.x = newX;
-      dragNode.y = newY;
-      dragNode.vx = 0;
-      dragNode.vy = 0;
+      const nextX = (e.clientX - rect.left - pan.x) / zoom;
+      const nextY = (e.clientY - rect.top - pan.y) / zoom;
+      dragNode.x = nextX;
+      dragNode.y = nextY;
+      dragNode.targetX = nextX;
+      dragNode.targetY = nextY;
     } else if (isDragging) {
       setPan({
         x: e.clientX - dragStart.x,
@@ -402,53 +717,90 @@ export default function GraphCanvas({
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.1 : 0.9;
-    setZoom((prev) => Math.min(3.0, Math.max(0.3, prev * factor)));
+    const zoomFactor = 1.1;
+    const newZoom = e.deltaY < 0 ? Math.min(3.0, zoom * zoomFactor) : Math.max(0.3, zoom / zoomFactor);
+    setZoom(newZoom);
   };
 
-  const handleResetView = () => {
-    setZoom(1);
+  const handleFitView = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    setZoom(1.0);
     setPan({ x: 0, y: 0 });
-    setSelectedNode(null);
   };
+
+  // Connected edges and neighbors for selected node
+  const selectedNodeRelationships = useMemo(() => {
+    if (!selectedNode) return { inbound: [], outbound: [] };
+    const inbound = edges.filter((e) => e.target === selectedNode.id);
+    const outbound = edges.filter((e) => e.source === selectedNode.id);
+    return { inbound, outbound };
+  }, [selectedNode, edges]);
 
   return (
-    <div className="relative w-full h-full flex flex-col bg-[#0a0d16] overflow-hidden rounded-xl border border-slate-800/80 shadow-2xl">
-      {/* Top Canvas Controls Bar */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
-        {/* Left: Active Graph Pill & Status */}
+    <div
+      ref={containerRef}
+      className="relative flex flex-col h-full w-full bg-[#070a12] rounded-xl border border-slate-800/90 overflow-hidden shadow-2xl select-none"
+    >
+      {/* Top Controls Bar */}
+      <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+        {/* Left: Active Namespace Badge & Layout Switcher */}
         <div className="flex items-center gap-2 pointer-events-auto">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 backdrop-blur-md shadow-lg text-xs font-mono">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse-fast shadow-[0_0_8px_#22d3ee]" />
-            <span className="text-slate-400">Namespace:</span>
-            <span className="text-cyan-300 font-bold">{activeGraphName}</span>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 backdrop-blur-md text-xs font-mono text-cyan-300 shadow-lg">
+            <Database className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="font-semibold text-slate-100">{activeGraphName}</span>
+            <span className="text-slate-500">|</span>
+            <span className="text-slate-400">{nodes.length} nodes</span>
+            <span className="text-slate-500">|</span>
+            <span className="text-slate-400">{edges.length} edges</span>
           </div>
 
-          <div className="px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 backdrop-blur-md shadow-lg text-xs font-mono text-slate-300">
-            {nodes.length} nodes · {edges.length} edges
+          {/* Layout Switcher */}
+          <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5 backdrop-blur-md shadow-lg text-[11px] font-mono">
+            <button
+              onClick={() => setLayoutMode("dag")}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all ${
+                layoutMode === "dag" ? "bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-semibold shadow-sm" : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Hierarchical Directed Acyclic Graph (Best for blast radius & dependency flow)"
+            >
+              <GitBranch className="w-3 h-3 text-cyan-400" />
+              <span>DAG Blast-Radius</span>
+            </button>
+            <button
+              onClick={() => setLayoutMode("radial")}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all ${
+                layoutMode === "radial" ? "bg-purple-950 text-purple-300 border border-purple-500/40 font-semibold shadow-sm" : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Concentric Radial Layout (Best for Centrality & Bus Factor)"
+            >
+              <Target className="w-3 h-3 text-purple-400" />
+              <span>Radial Centrality</span>
+            </button>
+            <button
+              onClick={() => setLayoutMode("force")}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all ${
+                layoutMode === "force" ? "bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-semibold shadow-sm" : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Force-Directed Physics Simulation"
+            >
+              <Activity className="w-3 h-3 text-emerald-400" />
+              <span>Force Physics</span>
+            </button>
           </div>
-
-          {highlightIds.length > 0 && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/80 border border-cyan-500/50 backdrop-blur-md shadow-lg text-xs font-mono text-cyan-300 animate-glow">
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{highlightIds.length} Traversal Nodes Active</span>
-            </div>
-          )}
         </div>
 
-        {/* Right: Zoom / Filter Controls */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          {/* Label Filter Dropdown */}
-          <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-700/80 backdrop-blur-md shadow-lg text-xs">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
+        {/* Right: Label Filter & Zoom HUD */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {/* Label Filter */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-800 backdrop-blur-md text-xs font-mono text-slate-300">
+            <Filter className="w-3 h-3 text-slate-400" />
             <select
               value={filterLabel}
               onChange={(e) => setFilterLabel(e.target.value)}
-              className="bg-transparent text-slate-300 focus:outline-none cursor-pointer font-mono"
+              className="bg-transparent text-xs text-slate-200 focus:outline-none cursor-pointer"
             >
-              <option value="ALL" className="bg-slate-900 text-slate-200">
-                All Labels ({nodes.length})
-              </option>
+              <option value="ALL" className="bg-slate-900 text-slate-200">All Entities ({nodes.length})</option>
               {availableLabels.map((lbl) => (
                 <option key={lbl} value={lbl} className="bg-slate-900 text-slate-200">
                   {lbl}
@@ -457,111 +809,194 @@ export default function GraphCanvas({
             </select>
           </div>
 
-          {/* Action Buttons */}
-          <button
-            onClick={() => setZoom((z) => Math.min(3.0, z * 1.2))}
-            title="Zoom In"
-            className="p-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-300 hover:text-white transition-all shadow-lg"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setZoom((z) => Math.max(0.3, z * 0.8))}
-            title="Zoom Out"
-            className="p-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-300 hover:text-white transition-all shadow-lg"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleResetView}
-            title="Fit to Screen"
-            className="p-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-300 hover:text-white transition-all shadow-lg"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-          {onRefresh && (
+          {/* Zoom / Navigation Controls */}
+          <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5 backdrop-blur-md shadow-lg text-slate-300">
             <button
-              onClick={onRefresh}
-              title="Refresh Graph"
-              disabled={isLoading}
-              className="p-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-300 hover:text-white transition-all shadow-lg disabled:opacity-50"
+              onClick={() => setZoom((z) => Math.min(3.0, z * 1.2))}
+              className="p-1.5 hover:text-white hover:bg-slate-800 rounded transition-all"
+              title="Zoom In"
             >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin text-cyan-400" : ""}`} />
+              <ZoomIn className="w-3.5 h-3.5" />
             </button>
-          )}
+            <button
+              onClick={() => setZoom((z) => Math.max(0.3, z / 1.2))}
+              className="p-1.5 hover:text-white hover:bg-slate-800 rounded transition-all"
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={handleFitView}
+              className="p-1.5 hover:text-white hover:bg-slate-800 rounded transition-all"
+              title="Fit to Viewport"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                className="p-1.5 hover:text-cyan-400 hover:bg-slate-800 rounded transition-all"
+                title="Refresh FalkorDB Graph Topology"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-cyan-400" : ""}`} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Main Interactive Canvas */}
+      {/* Main HTML5 2D Canvas */}
       <canvas
         ref={canvasRef}
-        width={1000}
-        height={750}
+        width={960}
+        height={680}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
-        className="w-full h-full cursor-grab active:cursor-grabbing"
+        className="flex-1 w-full h-full cursor-grab active:cursor-grabbing"
       />
 
-      {/* Bottom Color Legend */}
-      <div className="absolute bottom-3 left-3 z-10 flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800/80 backdrop-blur-md shadow-xl text-[11px] font-mono text-slate-300 pointer-events-auto">
-        <span className="text-slate-500 font-semibold mr-1">Legend:</span>
-        {Object.entries(COLOR_MAP)
-          .filter(([label]) => availableLabels.includes(label))
-          .map(([label, color]) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: color }} />
-              <span className="text-slate-300">{label}</span>
-            </div>
-          ))}
+      {/* Live Minimap HUD (Bottom-Right) */}
+      <div className="absolute bottom-3 right-3 z-10 p-1 rounded-xl bg-slate-950/80 border border-slate-800/90 backdrop-blur-md shadow-2xl pointer-events-none">
+        <canvas ref={minimapRef} width={120} height={90} className="rounded-lg bg-[#05070d]" />
+        <div className="text-[9px] font-mono text-slate-500 text-center pt-0.5">FalkorDB Radar</div>
       </div>
 
-      {/* Selected Node Details Drawer */}
+      {/* Interactive Node Telemetry Drawer (Slide-out on Right) */}
       {selectedNode && (
-        <div className="absolute bottom-3 right-3 z-20 w-80 max-h-96 rounded-xl bg-slate-900/95 border border-cyan-500/40 backdrop-blur-xl p-4 shadow-2xl flex flex-col overflow-hidden text-xs">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+        <div className="absolute top-14 right-3 bottom-3 w-80 z-20 flex flex-col bg-slate-900/95 border border-cyan-500/40 rounded-xl shadow-2xl backdrop-blur-xl overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200">
+          {/* Drawer Header */}
+          <div className="p-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span
-                className="w-3 h-3 rounded-full shadow-sm"
-                style={{ backgroundColor: selectedNode.color || COLOR_MAP[selectedNode.label] }}
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: COLOR_MAP[selectedNode.label]?.border || "#94a3b8" }}
               />
-              <span className="font-bold text-white text-sm truncate">{selectedNode.name || selectedNode.id}</span>
+              <span className="text-xs font-mono uppercase text-cyan-400 font-semibold tracking-wider">
+                {selectedNode.label}
+              </span>
             </div>
             <button
               onClick={() => setSelectedNode(null)}
-              className="text-slate-400 hover:text-white px-1.5 py-0.5 rounded text-sm hover:bg-slate-800"
+              className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-all"
             >
-              ✕
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="mt-2.5 space-y-2 overflow-y-auto pr-1">
-            <div className="flex items-center justify-between font-mono text-[11px]">
-              <span className="text-slate-400">Label:</span>
-              <span className="px-2 py-0.5 rounded bg-slate-800 text-cyan-300 font-semibold">{selectedNode.label}</span>
-            </div>
-            <div className="flex items-center justify-between font-mono text-[11px]">
-              <span className="text-slate-400">Node ID:</span>
-              <span className="text-slate-200 truncate max-w-[160px]">{selectedNode.id}</span>
+          {/* Drawer Content */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 font-sans">
+            <div>
+              <h3 className="text-sm font-bold text-white mb-0.5">
+                {selectedNode.name || selectedNode.id}
+              </h3>
+              <p className="text-[11px] font-mono text-slate-400 truncate">ID: {selectedNode.id}</p>
             </div>
 
-            {selectedNode.properties && Object.keys(selectedNode.properties).length > 0 && (
-              <div className="mt-2 pt-2 border-t border-slate-800/80">
-                <span className="text-slate-400 font-mono text-[11px] block mb-1">Properties:</span>
-                <div className="bg-slate-950/80 rounded-lg p-2 font-mono text-[11px] space-y-1 border border-slate-800 max-h-40 overflow-y-auto">
-                  {Object.entries(selectedNode.properties).map(([k, v]) => (
-                    <div key={k} className="flex justify-between gap-2">
-                      <span className="text-slate-500">{k}:</span>
-                      <span className="text-emerald-400 truncate max-w-[140px]" title={String(v)}>
-                        {String(v)}
-                      </span>
-                    </div>
-                  ))}
+            {/* Status Indicator */}
+            {selectedNode.properties?.status && (
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-800">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    selectedNode.properties.status === "HEALTHY"
+                      ? "bg-emerald-400 animate-pulse"
+                      : "bg-red-500 animate-bounce"
+                  }`}
+                />
+                <div className="text-xs font-mono">
+                  <span className="text-slate-400">Status: </span>
+                  <span
+                    className={`font-semibold ${
+                      selectedNode.properties.status === "HEALTHY" ? "text-emerald-400" : "text-red-400"
+                    }`}
+                  >
+                    {selectedNode.properties.status}
+                  </span>
                 </div>
               </div>
             )}
+
+            {/* Entity Raw Properties */}
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-semibold">
+                GraphBLAS Entity Attributes
+              </span>
+              <div className="space-y-1 bg-slate-950/90 rounded-lg p-2 border border-slate-800/80 text-xs font-mono">
+                {Object.entries(selectedNode.properties || {}).map(([key, val]) => (
+                  <div key={key} className="flex justify-between items-start gap-2 py-0.5 border-b border-slate-900/60 last:border-0">
+                    <span className="text-slate-400 shrink-0">{key}:</span>
+                    <span className="text-slate-200 text-right truncate max-w-[160px]" title={String(val)}>
+                      {String(val)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Connected Inbound & Outbound Relationships */}
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-semibold">
+                Connected Topology ({selectedNodeRelationships.inbound.length + selectedNodeRelationships.outbound.length})
+              </span>
+
+              <div className="space-y-1.5 text-xs font-mono">
+                {selectedNodeRelationships.outbound.map((edge) => (
+                  <div
+                    key={edge.id}
+                    onClick={() => {
+                      const tgtNode = simNodesRef.current.get(edge.target);
+                      if (tgtNode) setSelectedNode(tgtNode);
+                    }}
+                    className="p-1.5 rounded bg-slate-950/70 border border-slate-800/80 hover:border-cyan-500/40 cursor-pointer transition-all flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-1 text-[11px] text-cyan-400">
+                      <span>[{edge.type}]</span>
+                      <ArrowRight className="w-3 h-3 text-slate-500" />
+                    </div>
+                    <span className="text-slate-200 truncate max-w-[120px]">{edge.target}</span>
+                  </div>
+                ))}
+
+                {selectedNodeRelationships.inbound.map((edge) => (
+                  <div
+                    key={edge.id}
+                    onClick={() => {
+                      const srcNode = simNodesRef.current.get(edge.source);
+                      if (srcNode) setSelectedNode(srcNode);
+                    }}
+                    className="p-1.5 rounded bg-slate-950/70 border border-slate-800/80 hover:border-purple-500/40 cursor-pointer transition-all flex items-center justify-between"
+                  >
+                    <span className="text-slate-200 truncate max-w-[120px]">{edge.source}</span>
+                    <div className="flex items-center gap-1 text-[11px] text-purple-400">
+                      <ArrowRight className="w-3 h-3 text-slate-500" />
+                      <span>[{edge.type}]</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Drawer Footer Action */}
+          <div className="p-2.5 bg-slate-950 border-t border-slate-800 flex gap-2">
+            <button
+              onClick={() => {
+                if (selectedNode.x !== undefined && selectedNode.y !== undefined) {
+                  const canvas = canvasRef.current;
+                  if (canvas) {
+                    setPan({
+                      x: canvas.width / 2 - selectedNode.x * zoom,
+                      y: canvas.height / 2 - selectedNode.y * zoom,
+                    });
+                  }
+                }
+              }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-cyan-950/70 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-mono font-semibold transition-all"
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span>Center Camera</span>
+            </button>
           </div>
         </div>
       )}

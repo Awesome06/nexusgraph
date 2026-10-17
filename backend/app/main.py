@@ -113,7 +113,8 @@ def get_graph_data(graph_name: str) -> SubgraphPayload:
 async def stream_investigation(
     query: str = Query(..., description="Alert message or investigation prompt"),
     target_service: Optional[str] = Query("payment-engine", description="Anchor service"),
-    session_id: Optional[str] = Query(None, description="Session ID for blackboard isolation")
+    session_id: Optional[str] = Query(None, description="Session ID for blackboard isolation"),
+    scenario_id: Optional[str] = Query(None, description="Scenario ID to route specialized workflow")
 ):
     """Server-Sent Events (SSE) streaming endpoint for live agent thoughts and Cypher traces."""
     active_session_id = session_id or f"session_{uuid.uuid4().hex[:6]}"
@@ -124,6 +125,7 @@ async def stream_investigation(
             async for step_event in stream_swarm_investigation(
                 session_id=active_session_id,
                 query=query,
+                scenario_id=scenario_id,
                 target_service=target_service or "payment-engine",
                 manager=manager
             ):
@@ -159,6 +161,7 @@ def run_investigation(req: InvestigateRequest):
     result = run_swarm_pipeline(
         session_id=session_id,
         query=req.query,
+        scenario_id=req.scenario_id,
         target_service=req.target_service or "payment-engine",
         manager=manager
     )

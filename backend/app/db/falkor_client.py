@@ -141,102 +141,167 @@ class FalkorManager:
             return records, elapsed
 
     def extract_subgraph(self, raw_records: List[Any], cypher: str = "", highlight_ids: Optional[List[str]] = None) -> SubgraphPayload:
-        """Transforms arbitrary FalkorDB query result_set into a structured SubgraphPayload."""
+        """Transforms arbitrary FalkorDB query result_set into a structured SubgraphPayload.
+        
+        Performs a two-pass extraction:
+        Pass 1: Collect and register all Node entities into canonical IDs and internal-to-canonical mapping.
+        Pass 2: Resolve Edge endpoints through the canonical mapping so edge sources and targets match node IDs.
+        """
         nodes_dict: Dict[str, NodePayload] = {}
         edges_dict: Dict[str, EdgePayload] = {}
+        internal_id_to_canonical: Dict[Any, str] = {}
         highlight_ids = highlight_ids or []
 
-        def process_entity(entity: Any):
+        raw_nodes: List[Any] = []
+        raw_edges: List[Any] = []
+
+        def flatten_entities(entity: Any):
             if entity is None:
                 return
-            
-            # Check if entity is a Node
+            if isinstance(entity, (list, tuple, set)):
+                for item in entity:
+                    flatten_entities(item)
+                return
+
+            # Check if Node
+            if hasattr(entity, "labels") and hasattr(entity, "properties"):
+                raw_nodes.append(entity)
+                return
+
+            # Check if Edge
+            if hasattr(entity, "relation") and hasattr(entity, "src_node") and hasattr(entity, "dest_node"):
+                raw_edges.append(entity)
+                return
+
+            # Dict representation
+            if isinstance(entity, dict):
+                if "src" in entity and "dest" in entity:
+                    raw_edges.append(entity)
+                elif "id" in entity and ("label" in entity or "type" in entity):
+                    raw_nodes.append(entity)
+
+        # 1. Flatten all rows
+        for row in raw_records:
+            flatten_entities(row)
+
+        # 2. Pass 1: Extract Nodes
+        for entity in raw_nodes:
+            if isinstance(entity, dict):
+                nid = str(entity.get("name") or entity.get("id") or entity.get("sha") or entity.get("title") or "unknown")
+                lbl = str(entity.get("label") or entity.get("type") or "Entity")
+                props = entity.get("properties", {})
+                cfg = NODE_TYPE_CONFIG.get(lbl, {"color": "#94a3b8", "val": 1.0, "type": "generic"})
+                nodes_dict[nid] = NodePayload(
+                    id=nid,
+                    name=str(entity.get("name") or entity.get("title") or nid),
+                    label=lbl,
+                    labels=[lbl],
+                    properties=props,
+                    type=cfg["type"],
+                    color=cfg["color"],
+                    val=cfg["val"]
+                )
+                internal_id_to_canonical[entity.get("id")] = nid
+                internal_id_to_canonical[str(entity.get("id"))] = nid
+                if entity.get("name"):
+                    internal_id_to_canonical[str(entity["name"])] = nid
+                continue
+
             labels = getattr(entity, "labels", None)
             properties = getattr(entity, "properties", None)
             entity_id = getattr(entity, "id", None)
 
-            # Node handling
-            if labels is not None and properties is not None:
-                lbl = labels[0] if labels else "Entity"
-                props = dict(properties)
-                # Determine reliable node ID
-                nid = str(props.get("name") or props.get("id") or props.get("sha") or props.get("title") or entity_id)
-                name = str(props.get("name") or props.get("title") or props.get("sha") or nid)
-                
-                cfg = NODE_TYPE_CONFIG.get(lbl, {"color": "#94a3b8", "val": 1.0, "type": "generic"})
-                # Override degraded service color
-                color = cfg["color"]
-                if lbl == "Service" and props.get("status") in ("DEGRADED", "UNHEALTHY", "FAILING"):
-                    color = "#ef4444"
+            lbl = labels[0] if labels else "Entity"
+            props = dict(properties) if properties is not None else {}
+            # Determine canonical node ID (prefer business identifiers: name, sha, id, title)
+            nid = str(props.get("name") or props.get("id") or props.get("sha") or props.get("title") or entity_id)
+            name = str(props.get("name") or props.get("title") or props.get("sha") or nid)
 
-                nodes_dict[nid] = NodePayload(
-                    id=nid,
-                    name=name,
-                    label=lbl,
-                    labels=list(labels),
-                    properties=props,
-                    type=cfg["type"],
-                    color=color,
-                    val=cfg["val"]
-                )
-                return
+            cfg = NODE_TYPE_CONFIG.get(lbl, {"color": "#94a3b8", "val": 1.0, "type": "generic"})
+            color = cfg["color"]
+            if lbl == "Service" and props.get("status") in ("DEGRADED", "UNHEALTHY", "FAILING"):
+                color = "#ef4444"
 
-            # Relationship / Edge handling
-            relation = getattr(entity, "relation", None)
-            src_node = getattr(entity, "src_node", None)
-            dest_node = getattr(entity, "dest_node", None)
-            if relation is not None and src_node is not None and dest_node is not None:
-                edge_props = dict(getattr(entity, "properties", {}) or {})
-                # Resolve source / target names
-                s_id = str(src_node)
-                d_id = str(dest_node)
-                # If src_node is a Node object
-                if hasattr(src_node, "properties"):
-                    s_id = str(src_node.properties.get("name") or src_node.properties.get("id") or src_node.properties.get("sha") or src_node.id)
-                if hasattr(dest_node, "properties"):
-                    d_id = str(dest_node.properties.get("name") or dest_node.properties.get("id") or dest_node.properties.get("sha") or dest_node.id)
+            nodes_dict[nid] = NodePayload(
+                id=nid,
+                name=name,
+                label=lbl,
+                labels=list(labels) if labels else ["Entity"],
+                properties=props,
+                type=cfg["type"],
+                color=color,
+                val=cfg["val"]
+            )
 
-                eid = f"{s_id}-{relation}->{d_id}"
+            # Register mapping for edge endpoint resolution
+            if entity_id is not None:
+                internal_id_to_canonical[entity_id] = nid
+                internal_id_to_canonical[str(entity_id)] = nid
+            if props.get("name"):
+                internal_id_to_canonical[str(props["name"])] = nid
+            if props.get("id"):
+                internal_id_to_canonical[str(props["id"])] = nid
+            if props.get("sha"):
+                internal_id_to_canonical[str(props["sha"])] = nid
+            if props.get("title"):
+                internal_id_to_canonical[str(props["title"])] = nid
+
+        # 3. Pass 2: Extract Edges with resolved canonical endpoints
+        def resolve_endpoint_id(endpoint: Any) -> str:
+            if endpoint is None:
+                return "unknown"
+            # If endpoint is a Node object with properties
+            if hasattr(endpoint, "properties") and getattr(endpoint, "properties", None):
+                p = endpoint.properties
+                cand = p.get("name") or p.get("id") or p.get("sha") or p.get("title") or getattr(endpoint, "id", None)
+                if cand:
+                    return str(cand)
+            # Check internal-to-canonical mapping
+            if endpoint in internal_id_to_canonical:
+                return internal_id_to_canonical[endpoint]
+            if str(endpoint) in internal_id_to_canonical:
+                return internal_id_to_canonical[str(endpoint)]
+            return str(endpoint)
+
+        for entity in raw_edges:
+            if isinstance(entity, dict):
+                s_id = str(entity.get("src") or entity.get("source"))
+                d_id = str(entity.get("dest") or entity.get("target"))
+                s_id = internal_id_to_canonical.get(s_id, s_id)
+                d_id = internal_id_to_canonical.get(d_id, d_id)
+                rel = str(entity.get("type") or entity.get("relation") or "CONNECTED")
+                eid = f"{s_id}-{rel}->{d_id}"
                 is_hl = (s_id in highlight_ids or d_id in highlight_ids)
                 edges_dict[eid] = EdgePayload(
                     id=eid,
                     source=s_id,
                     target=d_id,
-                    type=relation,
-                    label=relation,
-                    properties=edge_props,
+                    type=rel,
+                    label=rel,
+                    properties=entity.get("properties", {}),
                     highlighted=is_hl
                 )
-                return
+                continue
 
-            # If list or path
-            if isinstance(entity, (list, tuple)):
-                for item in entity:
-                    process_entity(item)
-            elif isinstance(entity, dict):
-                # Might be dictionary representation of node or edge
-                if "id" in entity and ("label" in entity or "type" in entity):
-                    nid = str(entity["id"])
-                    lbl = entity.get("label", "Entity")
-                    cfg = NODE_TYPE_CONFIG.get(lbl, {"color": "#94a3b8", "val": 1.0, "type": "generic"})
-                    nodes_dict[nid] = NodePayload(
-                        id=nid,
-                        name=str(entity.get("name") or nid),
-                        label=lbl,
-                        labels=[lbl],
-                        properties=entity.get("properties", {}),
-                        type=cfg["type"],
-                        color=cfg["color"],
-                        val=cfg["val"]
-                    )
+            relation = getattr(entity, "relation", None) or "CONNECTED"
+            src_node = getattr(entity, "src_node", None)
+            dest_node = getattr(entity, "dest_node", None)
+            edge_props = dict(getattr(entity, "properties", {}) or {})
 
-        # Iterate over records
-        for row in raw_records:
-            if isinstance(row, (list, tuple)):
-                for cell in row:
-                    process_entity(cell)
-            else:
-                process_entity(row)
+            s_id = resolve_endpoint_id(src_node)
+            d_id = resolve_endpoint_id(dest_node)
+
+            eid = f"{s_id}-{relation}->{d_id}"
+            is_hl = (s_id in highlight_ids or d_id in highlight_ids)
+            edges_dict[eid] = EdgePayload(
+                id=eid,
+                source=s_id,
+                target=d_id,
+                type=relation,
+                label=relation,
+                properties=edge_props,
+                highlighted=is_hl
+            )
 
         return SubgraphPayload(
             nodes=list(nodes_dict.values()),
