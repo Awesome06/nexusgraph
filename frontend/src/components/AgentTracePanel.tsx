@@ -14,6 +14,7 @@ import {
   Code2,
   Copy,
   Check,
+  Zap,
 } from "lucide-react";
 
 export interface CypherTrace {
@@ -47,6 +48,95 @@ interface AgentTracePanelProps {
   isStreaming: boolean;
   currentAgent: string;
   activeStage: string;
+  playbackSpeed?: number;
+  onSpeedChange?: (speed: number) => void;
+  onOpenWorkflows?: () => void;
+  activeScenarioTitle?: string;
+}
+
+function renderInlineFormatting(text: string) {
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={i} className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-[11px]">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong key={i} className="text-white font-semibold">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return (
+        <em key={i} className="text-slate-300 italic">
+          {part.slice(1, -1)}
+        </em>
+      );
+    }
+    return part;
+  });
+}
+
+function FormattedMarkdown({ content }: { content: string }) {
+  const lines = content.split("\n");
+  return (
+    <div className="space-y-2 text-slate-200">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) return <div key={idx} className="h-0.5" />;
+
+        // Header ###
+        if (trimmed.startsWith("### ")) {
+          return (
+            <h3 key={idx} className="text-xs font-bold text-white flex items-center gap-1.5 pb-1 border-b border-emerald-500/20 mt-2">
+              {renderInlineFormatting(trimmed.replace(/^###\s+/, ""))}
+            </h3>
+          );
+        }
+        if (trimmed.startsWith("## ")) {
+          return (
+            <h2 key={idx} className="text-sm font-bold text-white pb-1 border-b border-slate-800 mt-2">
+              {renderInlineFormatting(trimmed.replace(/^##\s+/, ""))}
+            </h2>
+          );
+        }
+
+        // List item - or *
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-2 text-xs leading-relaxed text-slate-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 flex-shrink-0" />
+              <span>{renderInlineFormatting(trimmed.slice(2))}</span>
+            </div>
+          );
+        }
+
+        // Numbered list item: 1. 2.
+        const numMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+        if (numMatch) {
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-1 text-xs leading-relaxed text-slate-300 mt-1">
+              <span className="px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 font-mono text-[10px] font-bold mt-0.5 flex-shrink-0">
+                {numMatch[1]}
+              </span>
+              <span>{renderInlineFormatting(numMatch[2])}</span>
+            </div>
+          );
+        }
+
+        return (
+          <p key={idx} className="text-xs leading-relaxed text-slate-300">
+            {renderInlineFormatting(line)}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 const AGENT_META: Record<
@@ -92,6 +182,10 @@ export default function AgentTracePanel({
   isStreaming,
   currentAgent,
   activeStage,
+  playbackSpeed = 1,
+  onSpeedChange,
+  onOpenWorkflows,
+  activeScenarioTitle,
 }: AgentTracePanelProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [copied, setCopied] = React.useState(false);
@@ -114,19 +208,58 @@ export default function AgentTracePanel({
     <div className="flex flex-col h-full bg-[#0a0d16] rounded-xl border border-slate-800/80 overflow-hidden shadow-2xl">
       {/* Header Pipeline Tracker */}
       <div className="p-3 bg-slate-900/90 border-b border-slate-800 backdrop-blur-md">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-cyan-400" />
             <h2 className="text-sm font-semibold text-slate-100">Autonomous Swarm Live Stream</h2>
+            {activeScenarioTitle && (
+              <span
+                title={activeScenarioTitle}
+                className="hidden xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-500/30 text-[10px] font-mono text-cyan-300 truncate max-w-[320px] cursor-help"
+              >
+                {activeScenarioTitle}
+              </span>
+            )}
           </div>
-          {isStreaming ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-[11px] font-mono text-cyan-300 animate-pulse">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-              <span>Agent Swarm Active</span>
-            </div>
-          ) : (
-            <div className="text-[11px] font-mono text-slate-500">Idle / Ready</div>
-          )}
+          <div className="flex items-center gap-2">
+            {onOpenWorkflows && (
+              <button
+                onClick={onOpenWorkflows}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-mono font-semibold transition shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                title="Open Hackathon Evaluation Workflows Suite"
+              >
+                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Workflows ⚡</span>
+              </button>
+            )}
+            {/* Speed Pacing Toggle for Demo & Judges */}
+            {onSpeedChange && (
+              <div className="flex items-center bg-slate-950/90 border border-slate-800 rounded-lg p-0.5 text-[10px] font-mono">
+                <span className="px-1.5 text-slate-500">Pacing:</span>
+                {[0.5, 1, 2].map((sp) => (
+                  <button
+                    key={sp}
+                    onClick={() => onSpeedChange(sp)}
+                    className={`px-1.5 py-0.5 rounded transition ${
+                      playbackSpeed === sp
+                        ? "bg-cyan-950 text-cyan-300 font-bold border border-cyan-500/40"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {sp}x
+                  </button>
+                ))}
+              </div>
+            )}
+            {isStreaming ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-[11px] font-mono text-cyan-300 animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                <span>Swarm Active</span>
+              </div>
+            ) : (
+              <div className="text-[11px] font-mono text-slate-500">Ready</div>
+            )}
+          </div>
         </div>
 
         {/* 3-Agent Stepper Visualizer */}
@@ -200,7 +333,7 @@ export default function AgentTracePanel({
 
                 {/* Cognitive Reasoning Thought */}
                 <div className="text-slate-300 leading-relaxed font-sans mb-2.5 pl-1 text-[12px]">
-                  {evt.thought}
+                  {renderInlineFormatting(evt.thought)}
                 </div>
 
                 {/* MCP Tool Call Pill */}
@@ -254,8 +387,8 @@ export default function AgentTracePanel({
                         <span>{copied ? "Copied!" : "Copy Dispatch (Slack)"}</span>
                       </button>
                     </div>
-                    <div className="text-slate-200 font-sans text-xs leading-relaxed whitespace-pre-line space-y-2">
-                      {evt.final_answer}
+                    <div className="text-slate-200 font-sans text-xs leading-relaxed space-y-2">
+                      <FormattedMarkdown content={evt.final_answer} />
                     </div>
                   </div>
                 )}

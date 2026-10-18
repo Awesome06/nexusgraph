@@ -8,6 +8,7 @@ interface MemoryInspectorProps {
   onSelectGraph: (graphName: string) => void;
   onResetSeed: () => void;
   onOpenConsole?: () => void;
+  onBackToHero?: () => void;
   isSeeding: boolean;
   nodeCount: number;
   edgeCount: number;
@@ -19,6 +20,7 @@ export default function MemoryInspector({
   onSelectGraph,
   onResetSeed,
   onOpenConsole,
+  onBackToHero,
   isSeeding,
   nodeCount,
   edgeCount,
@@ -78,6 +80,17 @@ export default function MemoryInspector({
           <span className="text-slate-400">Engine:</span>
           <span className="text-slate-200">FalkorDB (Bolt :6379)</span>
         </div>
+
+        {onBackToHero && (
+          <button
+            onClick={onBackToHero}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 hover:bg-cyan-950/40 text-slate-300 hover:text-cyan-300 border border-slate-800 hover:border-cyan-500/40 text-xs font-mono transition shadow-sm"
+            title="Return to Hero Screen"
+          >
+            <span>←</span>
+            <span>Hero</span>
+          </button>
+        )}
       </div>
 
       {/* Center: Multigraph Tabs */}

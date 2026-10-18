@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Shield,
   Clock,
+  History,
   Compass,
   ArrowRight,
   ChevronRight,
@@ -97,6 +98,7 @@ export default function GraphCanvas({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragNode, setDragNode] = useState<GraphNode | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 900, height: 600 });
 
   // Maintain simulation positions
   const simNodesRef = useRef<Map<string, GraphNode>>(new Map());
@@ -210,9 +212,8 @@ export default function GraphCanvas({
 
   // Synchronize internal node positions with incoming props & layout mode
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const width = canvas ? canvas.width : 900;
-    const height = canvas ? canvas.height : 600;
+    const width = dimensions.width;
+    const height = dimensions.height;
 
     const existing = simNodesRef.current;
     const nextMap = new Map<string, GraphNode>();
@@ -225,7 +226,7 @@ export default function GraphCanvas({
       let x = prev?.x;
       let y = prev?.y;
 
-      if (x === undefined || y === undefined) {
+      if (x === undefined || y === undefined || target) {
         if (target) {
           x = target.x;
           y = target.y;
@@ -249,13 +250,16 @@ export default function GraphCanvas({
     });
 
     simNodesRef.current = nextMap;
-  }, [nodes, edges, layoutMode, applyLayout]);
+  }, [nodes, edges, layoutMode, dimensions, applyLayout]);
 
   // Center on Highlighted Path when highlighted nodes change
   useEffect(() => {
     if (highlightIds.length === 0) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const dpr = typeof window !== "undefined" ? Math.max(window.devicePixelRatio || 1, 2) : 1;
+    const cssW = canvas.width / dpr;
+    const cssH = canvas.height / dpr;
 
     const highlightNodes = highlightIds
       .map((id) => simNodesRef.current.get(id))
@@ -270,13 +274,46 @@ export default function GraphCanvas({
       const pathCenterX = (minX + maxX) / 2;
       const pathCenterY = (minY + maxY) / 2;
 
-      // Smooth pan to center
+      // Smooth pan to center in CSS coordinate space
       setPan({
-        x: canvas.width / 2 - pathCenterX * zoom,
-        y: canvas.height / 2 - pathCenterY * zoom,
+        x: cssW / 2 - pathCenterX * zoom,
+        y: cssH / 2 - pathCenterY * zoom,
       });
     }
   }, [highlightIds, zoom]);
+
+  // Dynamic High-DPI Canvas Resizing
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const updateCanvasSize = () => {
+      const rect = container.getBoundingClientRect();
+      const dpr = Math.max(window.devicePixelRatio || 1, 2);
+      const width = Math.floor(rect.width);
+      const height = Math.floor(rect.height);
+      if (width <= 0 || height <= 0) return;
+
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+
+      setDimensions((prev) => {
+        if (Math.abs(prev.width - width) > 5 || Math.abs(prev.height - height) > 5) {
+          return { width, height };
+        }
+        return prev;
+      });
+    };
+
+    updateCanvasSize();
+    const ro = new ResizeObserver(() => updateCanvasSize());
+    ro.observe(container);
+
+    return () => ro.disconnect();
+  }, []);
 
   // Main Canvas Render & Animation Loop
   useEffect(() => {
@@ -291,8 +328,9 @@ export default function GraphCanvas({
       if (!running) return;
       pulseRef.current = (pulseRef.current + 0.04) % (Math.PI * 2);
 
-      const width = canvas.width;
-      const height = canvas.height;
+      const dpr = Math.max(window.devicePixelRatio || 1, 2);
+      const width = canvas.width / dpr;
+      const height = canvas.height / dpr;
       const simNodes = Array.from(simNodesRef.current.values());
 
       // 1. Force / Interpolation Physics
@@ -371,8 +409,9 @@ export default function GraphCanvas({
       }
 
       // 2. Clear canvas & apply pan/zoom
-      ctx.clearRect(0, 0, width, height);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save();
+      ctx.scale(dpr, dpr);
       ctx.translate(pan.x, pan.y);
       ctx.scale(zoom, zoom);
 
@@ -481,21 +520,23 @@ export default function GraphCanvas({
         // Edge Relationship Pill Badge at curve midpoint
         if (edge.type && (isEdgeHighlighted || !hasHighlights || zoom > 0.85)) {
           const badgeText = edge.type;
-          ctx.font = "8px ui-monospace, SFMono-Regular, monospace";
+          ctx.font = isEdgeHighlighted
+            ? "bold 10px ui-monospace, SFMono-Regular, monospace"
+            : "9px ui-monospace, SFMono-Regular, monospace";
           const textMetrics = ctx.measureText(badgeText);
-          const badgeW = textMetrics.width + 8;
-          const badgeH = 13;
+          const badgeW = textMetrics.width + 10;
+          const badgeH = 16;
 
-          ctx.fillStyle = isEdgeHighlighted ? "rgba(8, 24, 38, 0.9)" : "rgba(15, 23, 42, 0.85)";
-          ctx.strokeStyle = isEdgeHighlighted ? "rgba(34, 211, 238, 0.6)" : "rgba(71, 85, 105, 0.4)";
-          ctx.lineWidth = 1;
+          ctx.fillStyle = isEdgeHighlighted ? "rgba(8, 24, 38, 0.95)" : "rgba(10, 14, 23, 0.88)";
+          ctx.strokeStyle = isEdgeHighlighted ? "#06b6d4" : "rgba(100, 116, 139, 0.4)";
+          ctx.lineWidth = isEdgeHighlighted ? 1.5 : 1;
 
           ctx.beginPath();
-          ctx.roundRect(midX - badgeW / 2, midY - badgeH / 2, badgeW, badgeH, 3);
+          ctx.roundRect(midX - badgeW / 2, midY - badgeH / 2, badgeW, badgeH, 4);
           ctx.fill();
           ctx.stroke();
 
-          ctx.fillStyle = isEdgeHighlighted ? "#67e8f9" : "rgba(203, 213, 225, 0.75)";
+          ctx.fillStyle = isEdgeHighlighted ? "#67e8f9" : "#94a3b8";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(badgeText, midX, midY);
@@ -570,32 +611,44 @@ export default function GraphCanvas({
 
         // Node Title Tag (Below node)
         const displayName = node.name || node.id;
-        ctx.font = isHighlighted ? "bold 11px Inter, sans-serif" : "10px Inter, sans-serif";
+        ctx.font = isHighlighted
+          ? "bold 12px Inter, system-ui, sans-serif"
+          : isDegraded
+          ? "bold 12px Inter, system-ui, sans-serif"
+          : "600 11px Inter, system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
 
         // Label Background Tag
         const textMetrics = ctx.measureText(displayName);
-        const tagW = textMetrics.width + 10;
-        const tagH = 15;
+        const tagW = textMetrics.width + 14;
+        const tagH = 19;
         const tagY = (node.y || 0) + radius + 6;
 
-        ctx.fillStyle = isHighlighted ? "rgba(8, 24, 38, 0.95)" : "rgba(15, 23, 42, 0.85)";
-        ctx.strokeStyle = isHighlighted ? "rgba(34, 211, 238, 0.6)" : "rgba(51, 65, 85, 0.6)";
-        ctx.lineWidth = 1;
+        ctx.fillStyle = isDegraded
+          ? "rgba(45, 10, 10, 0.95)"
+          : isHighlighted
+          ? "rgba(6, 25, 44, 0.95)"
+          : "rgba(10, 14, 23, 0.92)";
+        ctx.strokeStyle = isDegraded
+          ? "#ef4444"
+          : isHighlighted
+          ? "#38bdf8"
+          : "rgba(148, 163, 184, 0.3)";
+        ctx.lineWidth = isHighlighted || isDegraded ? 1.5 : 1;
 
         ctx.beginPath();
-        ctx.roundRect((node.x || 0) - tagW / 2, tagY, tagW, tagH, 3);
+        ctx.roundRect((node.x || 0) - tagW / 2, tagY, tagW, tagH, 5);
         ctx.fill();
         ctx.stroke();
 
-        ctx.fillStyle = isHighlighted ? "#ffffff" : "#cbd5e1";
-        ctx.fillText(displayName, node.x || 0, tagY + 2);
+        ctx.fillStyle = isDegraded ? "#fca5a5" : isHighlighted ? "#ffffff" : "#f1f5f9";
+        ctx.fillText(displayName, node.x || 0, tagY + 3.5);
 
-        // Small Type Badge
-        ctx.font = "8px ui-monospace, monospace";
-        ctx.fillStyle = isHighlighted ? "#67e8f9" : "rgba(148, 163, 184, 0.7)";
-        ctx.fillText(node.label.toUpperCase(), node.x || 0, tagY + tagH + 2);
+        // Crisp Entity Sub-Badge
+        ctx.font = "bold 9px ui-monospace, monospace";
+        ctx.fillStyle = isDegraded ? "#ef4444" : isHighlighted ? "#38bdf8" : colorCfg.border;
+        ctx.fillText(node.label.toUpperCase(), node.x || 0, tagY + tagH + 3);
       });
 
       ctx.restore();
@@ -669,6 +722,7 @@ export default function GraphCanvas({
 
   // Canvas Mouse Interactions (Dragging, Panning, Selecting)
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -679,12 +733,11 @@ export default function GraphCanvas({
     const clicked = Array.from(simNodesRef.current.values()).find((n) => {
       if (n.x === undefined || n.y === undefined) return false;
       const dist = Math.sqrt((n.x - mouseX) ** 2 + (n.y - mouseY) ** 2);
-      return dist <= (n.val || 1.0) * 16 + 6;
+      return dist <= (n.val || 1.0) * 16 + 8;
     });
 
     if (clicked) {
       setDragNode(clicked);
-      setSelectedNode(clicked);
     } else {
       setIsDragging(true);
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -707,10 +760,40 @@ export default function GraphCanvas({
         x: e.clientX - dragStart.x,
         y: e.clientY - dragStart.y,
       });
+    } else {
+      // Hover cursor check
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = (e.clientX - rect.left - pan.x) / zoom;
+        const mouseY = (e.clientY - rect.top - pan.y) / zoom;
+        const isOverNode = Array.from(simNodesRef.current.values()).some((n) => {
+          if (n.x === undefined || n.y === undefined) return false;
+          const dist = Math.sqrt((n.x - mouseX) ** 2 + (n.y - mouseY) ** 2);
+          return dist <= (n.val || 1.0) * 16 + 8;
+        });
+        canvas.style.cursor = isOverNode ? "pointer" : "grab";
+      }
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const dragDistance = Math.hypot(e.clientX - mouseDownPosRef.current.x, e.clientY - mouseDownPosRef.current.y);
+    if (dragDistance < 6) {
+      // Clean click (not a drag)
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = (e.clientX - rect.left - pan.x) / zoom;
+        const mouseY = (e.clientY - rect.top - pan.y) / zoom;
+        const clicked = Array.from(simNodesRef.current.values()).find((n) => {
+          if (n.x === undefined || n.y === undefined) return false;
+          const dist = Math.sqrt((n.x - mouseX) ** 2 + (n.y - mouseY) ** 2);
+          return dist <= (n.val || 1.0) * 16 + 8;
+        });
+        setSelectedNode(clicked || null);
+      }
+    }
     setIsDragging(false);
     setDragNode(null);
   };
@@ -722,12 +805,70 @@ export default function GraphCanvas({
     setZoom(newZoom);
   };
 
-  const handleFitView = () => {
+  const handleFitView = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    setZoom(1.0);
-    setPan({ x: 0, y: 0 });
-  };
+    const simNodes = Array.from(simNodesRef.current.values());
+    if (simNodes.length === 0) {
+      setZoom(1.0);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    const dpr = typeof window !== "undefined" ? Math.max(window.devicePixelRatio || 1, 2) : 1;
+    const cssW = canvas.width / dpr;
+    const cssH = canvas.height / dpr;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    simNodes.forEach((n) => {
+      const px = n.targetX !== undefined ? n.targetX : n.x;
+      const py = n.targetY !== undefined ? n.targetY : n.y;
+      if (px !== undefined && py !== undefined) {
+        minX = Math.min(minX, px - 40);
+        maxX = Math.max(maxX, px + 40);
+        minY = Math.min(minY, py - 40);
+        maxY = Math.max(maxY, py + 40);
+      }
+    });
+
+    if (minX === Infinity || maxX === -Infinity) {
+      setZoom(1.0);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    const graphW = Math.max(100, maxX - minX);
+    const graphH = Math.max(100, maxY - minY);
+    const padding = 70;
+
+    const fitZoom = Math.min(
+      Math.max(0.5, Math.min((cssW - padding * 2) / graphW, (cssH - padding * 2) / graphH)),
+      1.25
+    );
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    setZoom(fitZoom);
+    setPan({
+      x: cssW / 2 - centerX * fitZoom,
+      y: cssH / 2 - centerY * fitZoom,
+    });
+  }, []);
+
+  const mouseDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Auto-fit on initial render, layout switch, dimension change, graph namespace change, or node updates
+  useEffect(() => {
+    const t = setTimeout(() => {
+      handleFitView();
+    }, 200);
+    return () => clearTimeout(t);
+  }, [layoutMode, dimensions, activeGraphName, nodes.length, handleFitView]);
 
   // Connected edges and neighbors for selected node
   const selectedNodeRelationships = useMemo(() => {
@@ -848,14 +989,28 @@ export default function GraphCanvas({
       {/* Main HTML5 2D Canvas */}
       <canvas
         ref={canvasRef}
-        width={960}
-        height={680}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
         className="flex-1 w-full h-full cursor-grab active:cursor-grabbing"
       />
+
+      {/* Dynamic Node Color Legend (Bottom-Left) */}
+      <div className="absolute bottom-3 left-3 z-10 hidden sm:flex flex-wrap items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800/90 backdrop-blur-md shadow-2xl text-[10px] font-mono max-w-[550px]">
+        {availableLabels.map((lbl) => {
+          const cfg = COLOR_MAP[lbl] || { bg: "#475569", border: "#94a3b8" };
+          return (
+            <div key={lbl} className="flex items-center gap-1.5">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
+                style={{ backgroundColor: cfg.bg, border: `1px solid ${cfg.border}` }}
+              />
+              <span className="text-slate-300">{lbl}</span>
+            </div>
+          );
+        })}
+      </div>
 
       {/* Live Minimap HUD (Bottom-Right) */}
       <div className="absolute bottom-3 right-3 z-10 p-1 rounded-xl bg-slate-950/80 border border-slate-800/90 backdrop-blur-md shadow-2xl pointer-events-none">
@@ -893,6 +1048,42 @@ export default function GraphCanvas({
               </h3>
               <p className="text-[11px] font-mono text-slate-400 truncate">ID: {selectedNode.id}</p>
             </div>
+
+            {/* Dedicated ADR Governance Contract View (Track 03) */}
+            {selectedNode.label === "ADR" && (
+              <div className="p-2.5 rounded-lg bg-pink-950/40 border border-pink-500/40 text-xs font-mono">
+                <div className="flex items-center gap-1.5 text-pink-300 font-bold mb-1">
+                  <Shield className="w-3.5 h-3.5 text-pink-400" />
+                  <span>Architecture Policy (ADR)</span>
+                </div>
+                <p className="text-[11px] text-pink-200/90 font-sans leading-snug">
+                  {selectedNode.properties?.description || selectedNode.properties?.title || "Strict architectural constraint governing service contracts."}
+                </p>
+                {selectedNode.properties?.max_timeout_ms && (
+                  <div className="mt-2 text-[10px] text-pink-300 bg-black/40 px-2 py-1 rounded border border-pink-500/20">
+                    Rule: Max Timeout ≤ {selectedNode.properties.max_timeout_ms}ms
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Dedicated Runbook / Procedural Memory View (Track 02) */}
+            {(selectedNode.label === "RunbookStep" || selectedNode.label === "Pattern") && (
+              <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-xs font-mono">
+                <div className="flex items-center gap-1.5 text-emerald-300 font-bold mb-1">
+                  <History className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Episodic Runbook Step</span>
+                </div>
+                <p className="text-[11px] text-emerald-200/90 font-sans leading-snug">
+                  {selectedNode.properties?.action || selectedNode.properties?.description || "Deterministic mitigation action recalled from procedural_memory."}
+                </p>
+                {selectedNode.properties?.confidence && (
+                  <div className="mt-2 text-[10px] text-emerald-300 bg-black/40 px-2 py-1 rounded border border-emerald-500/20">
+                    Confidence Weight: {(Number(selectedNode.properties.confidence) * 100).toFixed(0)}%
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Status Indicator */}
             {selectedNode.properties?.status && (
