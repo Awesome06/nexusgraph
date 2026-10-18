@@ -5,7 +5,8 @@ import { Flame, X, History, Sparkles, Layers, ShieldCheck, ArrowRight, RotateCcw
 import SwarmSidebar from "@/components/SwarmSidebar";
 import SwarmTopBar from "@/components/SwarmTopBar";
 import HeroScreen from "@/components/HeroScreen";
-import ScenarioSelector, { Scenario } from "@/components/ScenarioSelector";
+import { Scenario } from "@/components/ScenarioSelector";
+import EvaluationWorkflowsModal from "@/components/EvaluationWorkflowsModal";
 import AgentTracePanel, { AgentStepEvent } from "@/components/AgentTracePanel";
 import GraphCanvas, { GraphNode, GraphEdge } from "@/components/GraphCanvas";
 import CypherConsole from "@/components/CypherConsole";
@@ -64,6 +65,8 @@ export default function NexusGraphDashboard() {
   const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(false);
   const [consoleInitialTab, setConsoleInitialTab] = useState<"benchmark" | "cypher" | "chaos">("benchmark");
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+  const [isWorkflowsModalOpen, setIsWorkflowsModalOpen] = useState<boolean>(false);
+  const [activeScenarioTitle, setActiveScenarioTitle] = useState<string>("1. Cascading Timeout & Breaking Commit");
   const [chaosAlert, setChaosAlert] = useState<{
     target: string;
     type: string;
@@ -102,6 +105,19 @@ export default function NexusGraphDashboard() {
       .then((d) => setFalkorConnected(d.schema_status?.native_connected ?? true))
       .catch(() => setFalkorConnected(false));
   }, [activeGraph, fetchGraphTopology]);
+
+  // Global keyboard shortcut: Press 'W' to open Evaluation Workflows modal
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if ((e.key === "w" || e.key === "W") && !isConsoleOpen) {
+        const target = e.target as HTMLElement;
+        if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+        setIsWorkflowsModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKey);
+    return () => window.removeEventListener("keydown", handleGlobalKey);
+  }, [isConsoleOpen]);
 
   // Handle switching multigraph tabs
   const handleSelectGraph = (graphName: string) => {
@@ -543,6 +559,7 @@ export default function NexusGraphDashboard() {
     if (scenarioId) {
       const sc = DEFAULT_SCENARIOS.find((s) => s.id === scenarioId);
       if (sc) {
+        setActiveScenarioTitle(sc.title);
         setTimeout(() => {
           handleTriggerInvestigation(sc.suggested_query, sc.id);
         }, 350);
@@ -555,6 +572,7 @@ export default function NexusGraphDashboard() {
     setViewMode("dashboard");
     setActiveTab("dashboard");
     setIsConsoleOpen(false);
+    setActiveScenarioTitle("4. Chaos Failure Injection & Auto-Heal");
     try {
       const res = await fetch(`${API_BASE}/api/chaos/inject`, {
         method: "POST",
@@ -670,7 +688,7 @@ export default function NexusGraphDashboard() {
             nodeCount={nodes.length}
             edgeCount={edges.length}
             falkorConnected={falkorConnected}
-            onSearchQuery={(q) => handleTriggerInvestigation(q)}
+            onOpenWorkflows={() => setIsWorkflowsModalOpen(true)}
           />
 
           {/* Active Chaos Emergency Banner */}
@@ -791,28 +809,25 @@ export default function NexusGraphDashboard() {
                         activeStage={activeStage}
                         playbackSpeed={playbackSpeed}
                         onSpeedChange={setPlaybackSpeed}
+                        onOpenWorkflows={() => setIsWorkflowsModalOpen(true)}
+                        activeScenarioTitle={activeScenarioTitle}
                       />
                     </div>
                   </div>
                 ) : (
-                  /* Standard Swarm War Room View */
-                  <>
-                    <ScenarioSelector
-                      scenarios={DEFAULT_SCENARIOS}
-                      onTriggerScenario={handleTriggerInvestigation}
-                      isLoading={isStreaming}
+                  /* Standard Swarm War Room View: Full-Height 100% Live Stream */
+                  <div className="flex-1 min-h-0 h-full">
+                    <AgentTracePanel
+                      events={events}
+                      isStreaming={isStreaming}
+                      currentAgent={currentAgent}
+                      activeStage={activeStage}
+                      playbackSpeed={playbackSpeed}
+                      onSpeedChange={setPlaybackSpeed}
+                      onOpenWorkflows={() => setIsWorkflowsModalOpen(true)}
+                      activeScenarioTitle={activeScenarioTitle}
                     />
-                    <div className="flex-1 min-h-0">
-                      <AgentTracePanel
-                        events={events}
-                        isStreaming={isStreaming}
-                        currentAgent={currentAgent}
-                        activeStage={activeStage}
-                        playbackSpeed={playbackSpeed}
-                        onSpeedChange={setPlaybackSpeed}
-                      />
-                    </div>
-                  </>
+                  </div>
                 )}
               </div>
             )}
@@ -842,6 +857,21 @@ export default function NexusGraphDashboard() {
           activeGraphName={activeGraph}
           onRefreshGraph={() => fetchGraphTopology(activeGraph)}
           initialTab={consoleInitialTab}
+        />
+
+        {/* Hackathon Evaluation Workflows Pop-out Modal */}
+        <EvaluationWorkflowsModal
+          isOpen={isWorkflowsModalOpen}
+          onClose={() => setIsWorkflowsModalOpen(false)}
+          scenarios={DEFAULT_SCENARIOS}
+          onSelectScenario={(sc) => {
+            setActiveScenarioTitle(sc.title);
+            setActiveTab("dashboard");
+            handleTriggerInvestigation(sc.suggested_query, sc.id);
+          }}
+          isLoading={isStreaming}
+          onResetSeed={handleResetSeed}
+          isSeeding={isSeeding}
         />
       </div>
     </div>

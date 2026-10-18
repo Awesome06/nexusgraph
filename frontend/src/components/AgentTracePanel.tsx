@@ -14,6 +14,7 @@ import {
   Code2,
   Copy,
   Check,
+  Zap,
 } from "lucide-react";
 
 export interface CypherTrace {
@@ -49,6 +50,8 @@ interface AgentTracePanelProps {
   activeStage: string;
   playbackSpeed?: number;
   onSpeedChange?: (speed: number) => void;
+  onOpenWorkflows?: () => void;
+  activeScenarioTitle?: string;
 }
 
 function renderInlineFormatting(text: string) {
@@ -181,6 +184,8 @@ export default function AgentTracePanel({
   activeStage,
   playbackSpeed = 1,
   onSpeedChange,
+  onOpenWorkflows,
+  activeScenarioTitle,
 }: AgentTracePanelProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [copied, setCopied] = React.useState(false);
@@ -203,12 +208,27 @@ export default function AgentTracePanel({
     <div className="flex flex-col h-full bg-[#0a0d16] rounded-xl border border-slate-800/80 overflow-hidden shadow-2xl">
       {/* Header Pipeline Tracker */}
       <div className="p-3 bg-slate-900/90 border-b border-slate-800 backdrop-blur-md">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-cyan-400" />
             <h2 className="text-sm font-semibold text-slate-100">Autonomous Swarm Live Stream</h2>
+            {activeScenarioTitle && (
+              <span className="hidden xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-500/30 text-[10px] font-mono text-cyan-300 truncate max-w-[210px]">
+                {activeScenarioTitle}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {onOpenWorkflows && (
+              <button
+                onClick={onOpenWorkflows}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-mono font-semibold transition shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                title="Open Hackathon Evaluation Workflows Suite"
+              >
+                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Workflows ⚡</span>
+              </button>
+            )}
             {/* Speed Pacing Toggle for Demo & Judges */}
             {onSpeedChange && (
               <div className="flex items-center bg-slate-950/90 border border-slate-800 rounded-lg p-0.5 text-[10px] font-mono">
@@ -231,10 +251,10 @@ export default function AgentTracePanel({
             {isStreaming ? (
               <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-[11px] font-mono text-cyan-300 animate-pulse">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                <span>Agent Swarm Active</span>
+                <span>Swarm Active</span>
               </div>
             ) : (
-              <div className="text-[11px] font-mono text-slate-500">Idle / Ready</div>
+              <div className="text-[11px] font-mono text-slate-500">Ready</div>
             )}
           </div>
         </div>
