@@ -19,6 +19,12 @@
                           "domain/canvas-physics",
                           "ops/zero-cost-paas",
                           "db/schema-evolution",
-                          "domain/sse-streaming"
+                          "domain/sse-streaming",
+                          "ai/llm-structured-output",
+                          "ops/observability",
+                          "qa/synthetic-testing",
+                          "domain/network-resilience",
+                          "db/falkordb-advanced-analytics",
+                          "domain/chaos-remediation"
                       ]
 }

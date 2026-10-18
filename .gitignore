@@ -10,8 +10,9 @@ desktop.ini
 *.swo
 
 # Antigravity dynamic links (rebuilt per workspace; tracked via .agent/.active-skills.json)
-.agent/skills/*
-!.agent/skills/.gitkeep
+.agents/skills/*
+!.agents/skills/design-orchestrator/
+!.agents/skills/hackathon-evaluation-governance/
 
 # Common language build & runtime artifacts
 node_modules/
