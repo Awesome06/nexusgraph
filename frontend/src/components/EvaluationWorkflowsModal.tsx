@@ -37,6 +37,7 @@ const SCENARIO_DETAILS: Record<
     badgeBg: string;
     badgeText: string;
     trackBadge: string;
+    compactBenchmark: string;
     targetBenchmark: string;
     evaluationProof: string;
     buttonColor: string;
@@ -49,6 +50,7 @@ const SCENARIO_DETAILS: Record<
     badgeBg: "bg-red-950/80 border-red-500/40 text-red-300",
     badgeText: "ALERT / P1",
     trackBadge: "Track 01 & 02",
+    compactBenchmark: "0.38ms BFS",
     targetBenchmark: "0.38ms BFS Traversal",
     evaluationProof: "Isolates commit 8f92a1c by Arjun Mehta breaching ADR-002, executes rollback & connection pool flush.",
     buttonColor: "bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/40",
@@ -60,6 +62,7 @@ const SCENARIO_DETAILS: Record<
     badgeBg: "bg-amber-950/80 border-amber-500/40 text-amber-300",
     badgeText: "CENTRALITY / SPoF",
     trackBadge: "Track 01 & 03",
+    compactBenchmark: "1.4ms Centrality",
     targetBenchmark: "1.4ms In-Degree Centrality",
     evaluationProof: "Detects Bus Factor = 1 on fraud-scorer (Lucas Silva) violating ADR-005; auto-assigns Elena Rostova.",
     buttonColor: "bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40",
@@ -71,6 +74,7 @@ const SCENARIO_DETAILS: Record<
     badgeBg: "bg-emerald-950/80 border-emerald-500/40 text-emerald-300",
     badgeText: "EPISODIC / RUNBOOK",
     trackBadge: "Track 02 & 03",
+    compactBenchmark: "1.7ms Subgraph",
     targetBenchmark: "1.7ms Subgraph Recall",
     evaluationProof: "Matches symptom vector to INC-2025-104, executes RUN-001 & RUN-002, reinforces confidence to 0.99.",
     buttonColor: "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40",
@@ -81,9 +85,10 @@ const SCENARIO_DETAILS: Record<
     borderActive: "border-rose-500/70 ring-1 ring-rose-500/40 bg-rose-950/20",
     badgeBg: "bg-rose-950/80 border-rose-500/40 text-rose-300",
     badgeText: "CHAOS / AUTO-HEAL",
-    trackBadge: "Track 01 & 04",
+    trackBadge: "Tracks 01, 02 & 03",
+    compactBenchmark: "< 5s MTTR",
     targetBenchmark: "< 5s Autonomous MTTR",
-    evaluationProof: "Injects live latency spike (p99: 4,200ms) on payment-engine, trips circuit breaker, and verifies health restoration.",
+    evaluationProof: "Injects p99 4,200ms latency on payment-engine, trips circuit breaker, and restores baseline health.",
     buttonColor: "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/40",
   },
 };
@@ -114,7 +119,7 @@ export default function EvaluationWorkflowsModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div
-        className="relative w-full max-w-4xl bg-[#0E0E12] border border-white/[0.12] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-5xl bg-[#0E0E12] border border-white/[0.12] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
@@ -147,9 +152,9 @@ export default function EvaluationWorkflowsModal({
           </button>
         </div>
 
-        {/* Modal Body: 4 Curated Evaluation Scenario Cards */}
+        {/* Modal Body: 4 Curated Evaluation Scenario Cards (Identical Sizing & Spacing) */}
         <div className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-          {scenarios.map((sc, idx) => {
+          {scenarios.map((sc) => {
             const detail = SCENARIO_DETAILS[sc.id] || {
               icon: Zap,
               accent: "text-cyan-400",
@@ -157,6 +162,7 @@ export default function EvaluationWorkflowsModal({
               badgeBg: "bg-cyan-950 text-cyan-300",
               badgeText: sc.trigger_type,
               trackBadge: "Track 01",
+              compactBenchmark: "Sub-ms",
               targetBenchmark: "Sub-millisecond",
               evaluationProof: sc.description,
               buttonColor: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40",
@@ -167,49 +173,64 @@ export default function EvaluationWorkflowsModal({
             return (
               <div
                 key={sc.id}
-                className={`flex flex-col justify-between p-4 rounded-xl border transition-all text-left group ${
+                className={`flex flex-col justify-between p-4 rounded-xl border transition-all text-left group h-[290px] w-full select-none ${
                   isCurrent
                     ? `${detail.borderActive} shadow-[0_0_25px_rgba(6,182,212,0.1)]`
                     : "bg-[#141418]/90 border-white/[0.06] hover:border-cyan-500/30 hover:bg-[#18181F]"
                 }`}
               >
                 <div>
-                  {/* Top Bar of Card */}
-                  <div className="flex items-center justify-between gap-2 mb-2.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`p-1.5 rounded-lg bg-black/40 border border-white/[0.06] ${detail.accent}`}>
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs font-mono font-bold text-slate-200 truncate">
-                        {sc.title}
-                      </span>
+                  {/* Card Header: Fixed Icon (36x36) + Full Title + Subtitle Badge Row */}
+                  <div className="flex items-start gap-3 mb-2">
+                    <div className={`w-9 h-9 rounded-xl bg-black/50 border border-white/[0.08] ${detail.accent} flex items-center justify-center shrink-0 shadow-sm mt-0.5`}>
+                      <Icon className="w-4 h-4" />
                     </div>
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded border font-semibold ${detail.badgeBg}`}>
-                      {detail.badgeText}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h3
+                        className="text-sm font-mono font-bold text-slate-100 group-hover:text-white transition-colors h-5 leading-5 truncate cursor-help"
+                        title={sc.title}
+                      >
+                        {sc.title}
+                      </h3>
+
+                      {/* Subtitle Badge Row: Strictly single line, flex-nowrap, identical spacing across all cards */}
+                      <div className="flex items-center justify-between gap-1.5 mt-1.5 h-6 whitespace-nowrap flex-nowrap overflow-hidden">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded border font-bold tracking-wide shrink-0 ${detail.badgeBg}`}>
+                            {detail.badgeText}
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-slate-300 shrink-0">
+                            {detail.trackBadge}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-cyan-400 font-semibold shrink-0 ml-auto">
+                          ⚡ {detail.compactBenchmark}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Description */}
-                  <p className="text-xs text-slate-400 leading-relaxed mb-3 font-sans">
+                  {/* Description: Exactly uniform 2 lines across all cards */}
+                  <p className="text-xs text-slate-400 leading-relaxed font-sans h-[36px] line-clamp-2 my-2.5 overflow-hidden">
                     {sc.description}
                   </p>
 
-                  {/* Evaluation Criteria & Verification Evidence Box */}
-                  <div className="p-2.5 rounded-lg bg-black/50 border border-white/[0.04] mb-4 space-y-1.5 font-mono text-[11px]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider">Evaluation Proof</span>
-                      <span className="text-cyan-400 font-semibold">{detail.targetBenchmark}</span>
+                  {/* Evaluation Criteria & Verification Evidence Box: Exactly 72px high in all cards */}
+                  <div className="p-2.5 rounded-lg bg-black/50 border border-white/[0.04] font-mono text-[11px] h-[72px] flex flex-col justify-between overflow-hidden">
+                    <div className="flex items-center justify-between h-4">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider shrink-0">Evaluation Proof</span>
+                      <span className="text-cyan-400 font-semibold text-[10px] shrink-0 truncate ml-2">{detail.targetBenchmark}</span>
                     </div>
-                    <p className="text-slate-300 text-[11px] font-sans leading-snug">
+                    <p className="text-slate-300 text-[11px] font-sans leading-snug line-clamp-2 mt-1">
                       {detail.evaluationProof}
                     </p>
                   </div>
                 </div>
 
-                {/* Footer Action */}
-                <div className="flex items-center justify-between pt-3 border-t border-white/[0.06] mt-auto">
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-slate-400">
-                    {detail.trackBadge}
+                {/* Footer Action: Uniform spacing and 44px height */}
+                <div className="flex items-center justify-between pt-2.5 border-t border-white/[0.06] mt-auto h-[44px]">
+                  <span className="text-[11px] font-sans text-slate-400 italic">
+                    Ready to stream
                   </span>
 
                   <button
@@ -218,8 +239,7 @@ export default function EvaluationWorkflowsModal({
                       onSelectScenario(sc);
                       onClose();
                     }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border transition shadow-sm ${detail.buttonColor} disabled:opacity-40 disabled:cursor-not-allowed`}
-                  >
+                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold border transition shadow-sm ${detail.buttonColor} disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]`}>
                     <Play className="w-3.5 h-3.5 fill-current" />
                     <span>Run Evaluation →</span>
                   </button>

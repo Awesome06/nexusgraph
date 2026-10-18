@@ -213,7 +213,10 @@ export default function AgentTracePanel({
             <Terminal className="w-4 h-4 text-cyan-400" />
             <h2 className="text-sm font-semibold text-slate-100">Autonomous Swarm Live Stream</h2>
             {activeScenarioTitle && (
-              <span className="hidden xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-500/30 text-[10px] font-mono text-cyan-300 truncate max-w-[210px]">
+              <span
+                title={activeScenarioTitle}
+                className="hidden xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-500/30 text-[10px] font-mono text-cyan-300 truncate max-w-[320px] cursor-help"
+              >
                 {activeScenarioTitle}
               </span>
             )}
