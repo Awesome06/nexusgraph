@@ -127,7 +127,7 @@ export default function HeroScreen({ onEnterDashboard, falkorConnected = true }:
   const [activeTab, setActiveTab] = useState<string>("all");
 
   const hopsCounted = useCountUp(4, 1200, statsInView);
-  const speedupCounted = useCountUp(154, 1500, statsInView);
+  const speedupCounted = useCountUp(72, 1500, statsInView);
   const agentsCounted = useCountUp(3, 1000, statsInView);
 
   return (
@@ -228,10 +228,10 @@ export default function HeroScreen({ onEnterDashboard, falkorConnected = true }:
               Traversal Latency
             </div>
             <div className="text-3xl font-extrabold text-white tracking-tight mb-1 font-mono text-cyan-300">
-              &lt; 0.40 ms
+              &lt; 0.20 ms
             </div>
             <div className="text-xs text-slate-400 leading-snug">
-              Sub-millisecond FalkorDB GraphBLAS matrix multiplications.
+              Sub-millisecond FalkorDB GraphBLAS matrix multiplications (0.15ms at 4 hops).
             </div>
           </div>
 
@@ -244,7 +244,7 @@ export default function HeroScreen({ onEnterDashboard, falkorConnected = true }:
               {speedupCounted}x
             </div>
             <div className="text-xs text-slate-400 leading-snug">
-              Measured against PostgreSQL recursive CTE joins at 4 hops.
+              Measured against PostgreSQL recursive CTE joins at 4 hops (72.9x).
             </div>
           </div>
 

@@ -28,12 +28,12 @@ export interface CypherPreset {
 
 const DEFAULT_BENCHMARK_DATA = {
   comparisons: [
-    { hops: 1, falkordb_graphblas_ms: 0.12, relational_recursive_sql_ms: 1.8, speedup: "15x", paths_discovered: 3 },
-    { hops: 2, falkordb_graphblas_ms: 0.22, relational_recursive_sql_ms: 8.4, speedup: "38x", paths_discovered: 7 },
-    { hops: 3, falkordb_graphblas_ms: 0.31, relational_recursive_sql_ms: 24.6, speedup: "79x", paths_discovered: 14 },
-    { hops: 4, falkordb_graphblas_ms: 0.38, relational_recursive_sql_ms: 58.5, speedup: "154x", paths_discovered: 29 }
+    { hops: 1, falkordb_graphblas_ms: 0.28, relational_recursive_sql_ms: 1.53, speedup: "5.4x", paths_discovered: 1 },
+    { hops: 2, falkordb_graphblas_ms: 0.16, relational_recursive_sql_ms: 2.62, speedup: "16.2x", paths_discovered: 2 },
+    { hops: 3, falkordb_graphblas_ms: 0.18, relational_recursive_sql_ms: 5.12, speedup: "28.4x", paths_discovered: 3 },
+    { hops: 4, falkordb_graphblas_ms: 0.15, relational_recursive_sql_ms: 10.64, speedup: "72.9x", paths_discovered: 4 }
   ],
-  architectural_verdict: "FalkorDB GraphBLAS linear algebraic sparse matrix multiplication achieves O(1) pointer-chasing complexity, outperforming relational recursive CTE join trees by 154x at 4 hops."
+  architectural_verdict: "FalkorDB GraphBLAS linear algebraic sparse matrix multiplication achieves O(1) pointer-chasing complexity, outperforming relational recursive CTE join trees by over 72x at 4 hops on deployed topology."
 };
 
 const DEFAULT_PRESETS: Record<string, CypherPreset[]> = {

@@ -40,7 +40,7 @@ export default function SwarmSidebar({
     { id: "graph", label: "Graph Explorer", icon: Network, badge: null },
     { id: "blackboard", label: "Agent Blackboard", icon: BrainCircuit, badge: "Track 02" },
     { id: "memory", label: "Procedural Memory", icon: History, badge: "v0.99" },
-    { id: "benchmarks", label: "GraphBLAS vs SQL", icon: BarChart3, badge: "154x" },
+    { id: "benchmarks", label: "GraphBLAS vs SQL", icon: BarChart3, badge: "72x" },
     { id: "cypher", label: "openCypher REPL", icon: Terminal, badge: null },
   ];
 

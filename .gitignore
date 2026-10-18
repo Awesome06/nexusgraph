@@ -36,3 +36,6 @@ target/
 .wiki-cache.json
 wiki-graph.json
 wiki-graph.html
+
+# Local demo recording script
+DEMO_VIDEO_SCRIPT.md
