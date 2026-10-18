@@ -14,6 +14,10 @@
 
 ---
 
+![NexusGraph Swarm Mission Control & Topology Canvas](screenshots/02_swarm_command_center.png)
+
+---
+
 ## Competition Track Qualification
 
 NexusGraph aligns natively with all three Graph Hacks competition tracks simultaneously:
@@ -419,6 +423,7 @@ nexusgraph/
 │   ├── Dockerfile
 │   ├── package.json
 │   └── vercel.json                 # Vercel Edge configuration
+├── screenshots/                    # Mission Control & benchmark visual captures
 ├── wiki/                           # Repository Knowledge Graph & ADRs (Markdown)
 │   ├── adr/                        # Architectural Decision Records (001 - 004)
 │   ├── runbooks/                   # Incident remediation & zero-cost deployment runbooks
