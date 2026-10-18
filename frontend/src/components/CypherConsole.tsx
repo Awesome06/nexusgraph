@@ -80,15 +80,23 @@ interface CypherConsoleProps {
   onClose: () => void;
   activeGraphName: string;
   onRefreshGraph: () => void;
+  initialTab?: "benchmark" | "cypher" | "chaos";
 }
 
 export default function CypherConsole({
   isOpen,
   onClose,
   activeGraphName,
-  onRefreshGraph
+  onRefreshGraph,
+  initialTab = "benchmark",
 }: CypherConsoleProps) {
-  const [activeTab, setActiveTab] = useState<"benchmark" | "cypher" | "chaos">("benchmark");
+  const [activeTab, setActiveTab] = useState<"benchmark" | "cypher" | "chaos">(initialTab);
+
+  React.useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, isOpen]);
   
   // Benchmark state
   const [benchmarkData, setBenchmarkData] = useState<any>(null);

@@ -97,6 +97,7 @@ export default function GraphCanvas({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragNode, setDragNode] = useState<GraphNode | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 900, height: 600 });
 
   // Maintain simulation positions
   const simNodesRef = useRef<Map<string, GraphNode>>(new Map());
@@ -210,9 +211,8 @@ export default function GraphCanvas({
 
   // Synchronize internal node positions with incoming props & layout mode
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const width = canvas ? canvas.width : 900;
-    const height = canvas ? canvas.height : 600;
+    const width = dimensions.width;
+    const height = dimensions.height;
 
     const existing = simNodesRef.current;
     const nextMap = new Map<string, GraphNode>();
@@ -225,7 +225,7 @@ export default function GraphCanvas({
       let x = prev?.x;
       let y = prev?.y;
 
-      if (x === undefined || y === undefined) {
+      if (x === undefined || y === undefined || target) {
         if (target) {
           x = target.x;
           y = target.y;
@@ -249,13 +249,16 @@ export default function GraphCanvas({
     });
 
     simNodesRef.current = nextMap;
-  }, [nodes, edges, layoutMode, applyLayout]);
+  }, [nodes, edges, layoutMode, dimensions, applyLayout]);
 
   // Center on Highlighted Path when highlighted nodes change
   useEffect(() => {
     if (highlightIds.length === 0) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const dpr = typeof window !== "undefined" ? Math.max(window.devicePixelRatio || 1, 2) : 1;
+    const cssW = canvas.width / dpr;
+    const cssH = canvas.height / dpr;
 
     const highlightNodes = highlightIds
       .map((id) => simNodesRef.current.get(id))
@@ -270,13 +273,46 @@ export default function GraphCanvas({
       const pathCenterX = (minX + maxX) / 2;
       const pathCenterY = (minY + maxY) / 2;
 
-      // Smooth pan to center
+      // Smooth pan to center in CSS coordinate space
       setPan({
-        x: canvas.width / 2 - pathCenterX * zoom,
-        y: canvas.height / 2 - pathCenterY * zoom,
+        x: cssW / 2 - pathCenterX * zoom,
+        y: cssH / 2 - pathCenterY * zoom,
       });
     }
   }, [highlightIds, zoom]);
+
+  // Dynamic High-DPI Canvas Resizing
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const updateCanvasSize = () => {
+      const rect = container.getBoundingClientRect();
+      const dpr = Math.max(window.devicePixelRatio || 1, 2);
+      const width = Math.floor(rect.width);
+      const height = Math.floor(rect.height);
+      if (width <= 0 || height <= 0) return;
+
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+
+      setDimensions((prev) => {
+        if (Math.abs(prev.width - width) > 5 || Math.abs(prev.height - height) > 5) {
+          return { width, height };
+        }
+        return prev;
+      });
+    };
+
+    updateCanvasSize();
+    const ro = new ResizeObserver(() => updateCanvasSize());
+    ro.observe(container);
+
+    return () => ro.disconnect();
+  }, []);
 
   // Main Canvas Render & Animation Loop
   useEffect(() => {
@@ -291,8 +327,9 @@ export default function GraphCanvas({
       if (!running) return;
       pulseRef.current = (pulseRef.current + 0.04) % (Math.PI * 2);
 
-      const width = canvas.width;
-      const height = canvas.height;
+      const dpr = Math.max(window.devicePixelRatio || 1, 2);
+      const width = canvas.width / dpr;
+      const height = canvas.height / dpr;
       const simNodes = Array.from(simNodesRef.current.values());
 
       // 1. Force / Interpolation Physics
@@ -371,8 +408,9 @@ export default function GraphCanvas({
       }
 
       // 2. Clear canvas & apply pan/zoom
-      ctx.clearRect(0, 0, width, height);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save();
+      ctx.scale(dpr, dpr);
       ctx.translate(pan.x, pan.y);
       ctx.scale(zoom, zoom);
 
@@ -481,21 +519,23 @@ export default function GraphCanvas({
         // Edge Relationship Pill Badge at curve midpoint
         if (edge.type && (isEdgeHighlighted || !hasHighlights || zoom > 0.85)) {
           const badgeText = edge.type;
-          ctx.font = "8px ui-monospace, SFMono-Regular, monospace";
+          ctx.font = isEdgeHighlighted
+            ? "bold 10px ui-monospace, SFMono-Regular, monospace"
+            : "9px ui-monospace, SFMono-Regular, monospace";
           const textMetrics = ctx.measureText(badgeText);
-          const badgeW = textMetrics.width + 8;
-          const badgeH = 13;
+          const badgeW = textMetrics.width + 10;
+          const badgeH = 16;
 
-          ctx.fillStyle = isEdgeHighlighted ? "rgba(8, 24, 38, 0.9)" : "rgba(15, 23, 42, 0.85)";
-          ctx.strokeStyle = isEdgeHighlighted ? "rgba(34, 211, 238, 0.6)" : "rgba(71, 85, 105, 0.4)";
-          ctx.lineWidth = 1;
+          ctx.fillStyle = isEdgeHighlighted ? "rgba(8, 24, 38, 0.95)" : "rgba(10, 14, 23, 0.88)";
+          ctx.strokeStyle = isEdgeHighlighted ? "#06b6d4" : "rgba(100, 116, 139, 0.4)";
+          ctx.lineWidth = isEdgeHighlighted ? 1.5 : 1;
 
           ctx.beginPath();
-          ctx.roundRect(midX - badgeW / 2, midY - badgeH / 2, badgeW, badgeH, 3);
+          ctx.roundRect(midX - badgeW / 2, midY - badgeH / 2, badgeW, badgeH, 4);
           ctx.fill();
           ctx.stroke();
 
-          ctx.fillStyle = isEdgeHighlighted ? "#67e8f9" : "rgba(203, 213, 225, 0.75)";
+          ctx.fillStyle = isEdgeHighlighted ? "#67e8f9" : "#94a3b8";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(badgeText, midX, midY);
@@ -570,32 +610,44 @@ export default function GraphCanvas({
 
         // Node Title Tag (Below node)
         const displayName = node.name || node.id;
-        ctx.font = isHighlighted ? "bold 11px Inter, sans-serif" : "10px Inter, sans-serif";
+        ctx.font = isHighlighted
+          ? "bold 12px Inter, system-ui, sans-serif"
+          : isDegraded
+          ? "bold 12px Inter, system-ui, sans-serif"
+          : "600 11px Inter, system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
 
         // Label Background Tag
         const textMetrics = ctx.measureText(displayName);
-        const tagW = textMetrics.width + 10;
-        const tagH = 15;
+        const tagW = textMetrics.width + 14;
+        const tagH = 19;
         const tagY = (node.y || 0) + radius + 6;
 
-        ctx.fillStyle = isHighlighted ? "rgba(8, 24, 38, 0.95)" : "rgba(15, 23, 42, 0.85)";
-        ctx.strokeStyle = isHighlighted ? "rgba(34, 211, 238, 0.6)" : "rgba(51, 65, 85, 0.6)";
-        ctx.lineWidth = 1;
+        ctx.fillStyle = isDegraded
+          ? "rgba(45, 10, 10, 0.95)"
+          : isHighlighted
+          ? "rgba(6, 25, 44, 0.95)"
+          : "rgba(10, 14, 23, 0.92)";
+        ctx.strokeStyle = isDegraded
+          ? "#ef4444"
+          : isHighlighted
+          ? "#38bdf8"
+          : "rgba(148, 163, 184, 0.3)";
+        ctx.lineWidth = isHighlighted || isDegraded ? 1.5 : 1;
 
         ctx.beginPath();
-        ctx.roundRect((node.x || 0) - tagW / 2, tagY, tagW, tagH, 3);
+        ctx.roundRect((node.x || 0) - tagW / 2, tagY, tagW, tagH, 5);
         ctx.fill();
         ctx.stroke();
 
-        ctx.fillStyle = isHighlighted ? "#ffffff" : "#cbd5e1";
-        ctx.fillText(displayName, node.x || 0, tagY + 2);
+        ctx.fillStyle = isDegraded ? "#fca5a5" : isHighlighted ? "#ffffff" : "#f1f5f9";
+        ctx.fillText(displayName, node.x || 0, tagY + 3.5);
 
-        // Small Type Badge
-        ctx.font = "8px ui-monospace, monospace";
-        ctx.fillStyle = isHighlighted ? "#67e8f9" : "rgba(148, 163, 184, 0.7)";
-        ctx.fillText(node.label.toUpperCase(), node.x || 0, tagY + tagH + 2);
+        // Crisp Entity Sub-Badge
+        ctx.font = "bold 9px ui-monospace, monospace";
+        ctx.fillStyle = isDegraded ? "#ef4444" : isHighlighted ? "#38bdf8" : colorCfg.border;
+        ctx.fillText(node.label.toUpperCase(), node.x || 0, tagY + tagH + 3);
       });
 
       ctx.restore();
@@ -722,12 +774,68 @@ export default function GraphCanvas({
     setZoom(newZoom);
   };
 
-  const handleFitView = () => {
+  const handleFitView = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    setZoom(1.0);
-    setPan({ x: 0, y: 0 });
-  };
+    const simNodes = Array.from(simNodesRef.current.values());
+    if (simNodes.length === 0) {
+      setZoom(1.0);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    const dpr = typeof window !== "undefined" ? Math.max(window.devicePixelRatio || 1, 2) : 1;
+    const cssW = canvas.width / dpr;
+    const cssH = canvas.height / dpr;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    simNodes.forEach((n) => {
+      const px = n.targetX !== undefined ? n.targetX : n.x;
+      const py = n.targetY !== undefined ? n.targetY : n.y;
+      if (px !== undefined && py !== undefined) {
+        minX = Math.min(minX, px - 40);
+        maxX = Math.max(maxX, px + 40);
+        minY = Math.min(minY, py - 40);
+        maxY = Math.max(maxY, py + 40);
+      }
+    });
+
+    if (minX === Infinity || maxX === -Infinity) {
+      setZoom(1.0);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    const graphW = Math.max(100, maxX - minX);
+    const graphH = Math.max(100, maxY - minY);
+    const padding = 70;
+
+    const fitZoom = Math.min(
+      Math.max(0.5, Math.min((cssW - padding * 2) / graphW, (cssH - padding * 2) / graphH)),
+      1.25
+    );
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    setZoom(fitZoom);
+    setPan({
+      x: cssW / 2 - centerX * fitZoom,
+      y: cssH / 2 - centerY * fitZoom,
+    });
+  }, []);
+
+  // Auto-fit on initial render, layout switch, or dimension change
+  useEffect(() => {
+    const t = setTimeout(() => {
+      handleFitView();
+    }, 150);
+    return () => clearTimeout(t);
+  }, [layoutMode, dimensions, handleFitView]);
 
   // Connected edges and neighbors for selected node
   const selectedNodeRelationships = useMemo(() => {
@@ -848,14 +956,36 @@ export default function GraphCanvas({
       {/* Main HTML5 2D Canvas */}
       <canvas
         ref={canvasRef}
-        width={960}
-        height={680}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
         className="flex-1 w-full h-full cursor-grab active:cursor-grabbing"
       />
+
+      {/* Bottom-Left Node Color Legend */}
+      <div className="absolute bottom-3 left-3 z-10 hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-xl bg-slate-950/85 border border-slate-800/90 backdrop-blur-md shadow-2xl text-[10px] font-mono">
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_6px_#3b82f6]" />
+          <span className="text-slate-300">Service</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" />
+          <span className="text-slate-300">Person</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_6px_#f59e0b]" />
+          <span className="text-slate-300">Commit</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-pink-500 shadow-[0_0_6px_#ec4899]" />
+          <span className="text-slate-300">ADR</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_6px_#ef4444]" />
+          <span className="text-slate-300">Incident</span>
+        </div>
+      </div>
 
       {/* Live Minimap HUD (Bottom-Right) */}
       <div className="absolute bottom-3 right-3 z-10 p-1 rounded-xl bg-slate-950/80 border border-slate-800/90 backdrop-blur-md shadow-2xl pointer-events-none">
