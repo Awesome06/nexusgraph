@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Shield,
   Clock,
+  History,
   Compass,
   ArrowRight,
   ChevronRight,
@@ -721,6 +722,7 @@ export default function GraphCanvas({
 
   // Canvas Mouse Interactions (Dragging, Panning, Selecting)
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -731,12 +733,11 @@ export default function GraphCanvas({
     const clicked = Array.from(simNodesRef.current.values()).find((n) => {
       if (n.x === undefined || n.y === undefined) return false;
       const dist = Math.sqrt((n.x - mouseX) ** 2 + (n.y - mouseY) ** 2);
-      return dist <= (n.val || 1.0) * 16 + 6;
+      return dist <= (n.val || 1.0) * 16 + 8;
     });
 
     if (clicked) {
       setDragNode(clicked);
-      setSelectedNode(clicked);
     } else {
       setIsDragging(true);
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -759,10 +760,40 @@ export default function GraphCanvas({
         x: e.clientX - dragStart.x,
         y: e.clientY - dragStart.y,
       });
+    } else {
+      // Hover cursor check
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = (e.clientX - rect.left - pan.x) / zoom;
+        const mouseY = (e.clientY - rect.top - pan.y) / zoom;
+        const isOverNode = Array.from(simNodesRef.current.values()).some((n) => {
+          if (n.x === undefined || n.y === undefined) return false;
+          const dist = Math.sqrt((n.x - mouseX) ** 2 + (n.y - mouseY) ** 2);
+          return dist <= (n.val || 1.0) * 16 + 8;
+        });
+        canvas.style.cursor = isOverNode ? "pointer" : "grab";
+      }
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const dragDistance = Math.hypot(e.clientX - mouseDownPosRef.current.x, e.clientY - mouseDownPosRef.current.y);
+    if (dragDistance < 6) {
+      // Clean click (not a drag)
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = (e.clientX - rect.left - pan.x) / zoom;
+        const mouseY = (e.clientY - rect.top - pan.y) / zoom;
+        const clicked = Array.from(simNodesRef.current.values()).find((n) => {
+          if (n.x === undefined || n.y === undefined) return false;
+          const dist = Math.sqrt((n.x - mouseX) ** 2 + (n.y - mouseY) ** 2);
+          return dist <= (n.val || 1.0) * 16 + 8;
+        });
+        setSelectedNode(clicked || null);
+      }
+    }
     setIsDragging(false);
     setDragNode(null);
   };
@@ -829,13 +860,15 @@ export default function GraphCanvas({
     });
   }, []);
 
-  // Auto-fit on initial render, layout switch, or dimension change
+  const mouseDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Auto-fit on initial render, layout switch, dimension change, graph namespace change, or node updates
   useEffect(() => {
     const t = setTimeout(() => {
       handleFitView();
-    }, 150);
+    }, 200);
     return () => clearTimeout(t);
-  }, [layoutMode, dimensions, handleFitView]);
+  }, [layoutMode, dimensions, activeGraphName, nodes.length, handleFitView]);
 
   // Connected edges and neighbors for selected node
   const selectedNodeRelationships = useMemo(() => {
@@ -963,28 +996,20 @@ export default function GraphCanvas({
         className="flex-1 w-full h-full cursor-grab active:cursor-grabbing"
       />
 
-      {/* Bottom-Left Node Color Legend */}
-      <div className="absolute bottom-3 left-3 z-10 hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-xl bg-slate-950/85 border border-slate-800/90 backdrop-blur-md shadow-2xl text-[10px] font-mono">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_6px_#3b82f6]" />
-          <span className="text-slate-300">Service</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" />
-          <span className="text-slate-300">Person</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_6px_#f59e0b]" />
-          <span className="text-slate-300">Commit</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-pink-500 shadow-[0_0_6px_#ec4899]" />
-          <span className="text-slate-300">ADR</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_6px_#ef4444]" />
-          <span className="text-slate-300">Incident</span>
-        </div>
+      {/* Dynamic Node Color Legend (Bottom-Left) */}
+      <div className="absolute bottom-3 left-3 z-10 hidden sm:flex flex-wrap items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800/90 backdrop-blur-md shadow-2xl text-[10px] font-mono max-w-[550px]">
+        {availableLabels.map((lbl) => {
+          const cfg = COLOR_MAP[lbl] || { bg: "#475569", border: "#94a3b8" };
+          return (
+            <div key={lbl} className="flex items-center gap-1.5">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
+                style={{ backgroundColor: cfg.bg, border: `1px solid ${cfg.border}` }}
+              />
+              <span className="text-slate-300">{lbl}</span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Live Minimap HUD (Bottom-Right) */}
@@ -1023,6 +1048,42 @@ export default function GraphCanvas({
               </h3>
               <p className="text-[11px] font-mono text-slate-400 truncate">ID: {selectedNode.id}</p>
             </div>
+
+            {/* Dedicated ADR Governance Contract View (Track 03) */}
+            {selectedNode.label === "ADR" && (
+              <div className="p-2.5 rounded-lg bg-pink-950/40 border border-pink-500/40 text-xs font-mono">
+                <div className="flex items-center gap-1.5 text-pink-300 font-bold mb-1">
+                  <Shield className="w-3.5 h-3.5 text-pink-400" />
+                  <span>Architecture Policy (ADR)</span>
+                </div>
+                <p className="text-[11px] text-pink-200/90 font-sans leading-snug">
+                  {selectedNode.properties?.description || selectedNode.properties?.title || "Strict architectural constraint governing service contracts."}
+                </p>
+                {selectedNode.properties?.max_timeout_ms && (
+                  <div className="mt-2 text-[10px] text-pink-300 bg-black/40 px-2 py-1 rounded border border-pink-500/20">
+                    Rule: Max Timeout ≤ {selectedNode.properties.max_timeout_ms}ms
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Dedicated Runbook / Procedural Memory View (Track 02) */}
+            {(selectedNode.label === "RunbookStep" || selectedNode.label === "Pattern") && (
+              <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-xs font-mono">
+                <div className="flex items-center gap-1.5 text-emerald-300 font-bold mb-1">
+                  <History className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Episodic Runbook Step</span>
+                </div>
+                <p className="text-[11px] text-emerald-200/90 font-sans leading-snug">
+                  {selectedNode.properties?.action || selectedNode.properties?.description || "Deterministic mitigation action recalled from procedural_memory."}
+                </p>
+                {selectedNode.properties?.confidence && (
+                  <div className="mt-2 text-[10px] text-emerald-300 bg-black/40 px-2 py-1 rounded border border-emerald-500/20">
+                    Confidence Weight: {(Number(selectedNode.properties.confidence) * 100).toFixed(0)}%
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Status Indicator */}
             {selectedNode.properties?.status && (

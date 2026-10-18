@@ -48,32 +48,50 @@ const PRESET_SCENARIOS = [
   {
     id: "scenario-latency-cascade",
     num: "01",
-    tag: "ALERT TRIAGE",
-    tagColor: "border-rose-500/30 text-rose-300 bg-rose-950/30",
-    title: "Cascading Timeout & Breaking Commit",
+    tag: "ALERT / P1",
+    tagColor: "border-rose-500/40 text-rose-300 bg-rose-950/40",
+    trackBadge: "Track 01 & 02",
+    trackColor: "border-cyan-500/30 text-cyan-300 bg-cyan-950/30",
+    title: "1. Cascading Timeout & Breaking Commit",
     desc: "4-hop upstream GraphBLAS traversal isolates commit 8f92a1c violating ADR-002, triggering automated rollback.",
-    metric: "4 Hops Traversal",
+    metric: "0.38ms BFS Traversal",
     time: "0.38 ms",
   },
   {
     id: "scenario-bus-factor-audit",
     num: "02",
-    tag: "GOVERNANCE & SPoF",
-    tagColor: "border-amber-500/30 text-amber-300 bg-amber-950/30",
-    title: "Bus Factor & ADR Governance Audit",
+    tag: "CENTRALITY / SPoF",
+    tagColor: "border-amber-500/40 text-amber-300 bg-amber-950/40",
+    trackBadge: "Track 01 & 03",
+    trackColor: "border-purple-500/30 text-purple-300 bg-purple-950/30",
+    title: "2. Bus Factor & ADR Governance Audit",
     desc: "Computes GraphBLAS in-degree centrality, isolates SPoF (fraud-scorer Bus Factor = 1), and drafts governance.",
-    metric: "In-Degree Centrality",
-    time: "0.45 ms",
+    metric: "1.4ms Centrality",
+    time: "1.4 ms",
   },
   {
     id: "scenario-memory-recall",
     num: "03",
-    tag: "PROCEDURAL MEMORY",
-    tagColor: "border-emerald-500/30 text-emerald-300 bg-emerald-950/30",
-    title: "Cross-Session Procedural Memory",
+    tag: "EPISODIC / RUNBOOK",
+    tagColor: "border-emerald-500/40 text-emerald-300 bg-emerald-950/40",
+    trackBadge: "Track 02 & 03",
+    trackColor: "border-emerald-500/30 text-emerald-300 bg-emerald-950/30",
+    title: "3. Cross-Session Procedural Memory",
     desc: "Recalls past incident INC-2025-104 and reinforces runbook remediation confidence from 0.95 to 0.99.",
-    metric: "Confidence 0.99",
-    time: "0.32 ms",
+    metric: "1.7ms Subgraph Recall",
+    time: "1.7 ms",
+  },
+  {
+    id: "scenario-chaos-remediation",
+    num: "04",
+    tag: "CHAOS / AUTO-HEAL",
+    tagColor: "border-rose-500/40 text-rose-300 bg-rose-950/40",
+    trackBadge: "Tracks 01, 02 & 03",
+    trackColor: "border-cyan-500/40 text-cyan-300 bg-cyan-950/40",
+    title: "4. Chaos Failure Injection & Auto-Heal",
+    desc: "Injects live microservice latency (p99 4,200ms) into org_brain, trips circuit breaker, and verifies sub-5s self-healing.",
+    metric: "< 5s Autonomous MTTR",
+    time: "< 5s MTTR",
   },
 ];
 
@@ -261,38 +279,51 @@ export default function HeroScreen({ onEnterDashboard, falkorConnected = true }:
         <div className="mt-14 w-full">
           <div className="flex items-center justify-between mb-4 px-1">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-cyan-400" />
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
               <span className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-300">
-                1-Click Demonstration Scenarios
+                FalkorDB Graph Hacks 2026 — 4 Curated Evaluation Workflows
               </span>
             </div>
-            <span className="text-xs font-mono text-slate-500">Click to launch live in Console</span>
+            <span className="text-xs font-mono text-slate-400">Aligned with Tracks 01, 02 & 03 • Click to Launch</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-left">
             {PRESET_SCENARIOS.map((sc) => (
               <div
                 key={sc.id}
                 onClick={() => onEnterDashboard(sc.id)}
-                className="group relative bg-[#0E0E12] hover:bg-[#141418] rounded-2xl p-5 border border-white/[0.05] hover:border-cyan-500/40 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-cyan-500/10 hover:-translate-y-0.5"
+                className="group relative bg-[#0E0E12] hover:bg-[#141418] rounded-2xl p-4 border border-white/[0.05] hover:border-cyan-500/40 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-cyan-500/10 hover:-translate-y-0.5 flex flex-col justify-between h-[210px]"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${sc.tagColor}`}>
-                    {sc.tag}
-                  </span>
-                  <span className="text-[11px] font-mono text-slate-400">{sc.metric}</span>
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-2.5 whitespace-nowrap overflow-hidden">
+                    <div className="flex items-center gap-1.5 shrink-0 overflow-hidden">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border shrink-0 ${sc.tagColor}`}>
+                        {sc.tag}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold border shrink-0 ${sc.trackColor}`}>
+                        {sc.trackBadge}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-cyan-400 font-semibold shrink-0 ml-auto">
+                      ⚡ {sc.time}
+                    </span>
+                  </div>
+                  <h3
+                    className="text-xs font-bold font-mono text-white group-hover:text-cyan-300 transition-colors leading-snug truncate cursor-help"
+                    title={sc.title}
+                  >
+                    {sc.title}
+                  </h3>
+                  <p className="mt-2 text-[11px] text-slate-400 leading-relaxed font-sans line-clamp-2 h-[34px] overflow-hidden">
+                    {sc.desc}
+                  </p>
                 </div>
-                <h3 className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">
-                  {sc.title}
-                </h3>
-                <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-                  {sc.desc}
-                </p>
-                <div className="mt-4 pt-3 border-t border-white/[0.04] flex items-center justify-between text-xs font-mono text-cyan-400">
-                  <span className="group-hover:translate-x-1 transition-transform inline-flex items-center gap-1 font-semibold">
+
+                <div className="pt-2.5 border-t border-white/[0.05] flex items-center justify-between text-xs font-mono text-cyan-400 mt-auto">
+                  <span className="group-hover:translate-x-1 transition-transform inline-flex items-center gap-1 font-semibold text-[11px]">
                     Execute Swarm →
                   </span>
-                  <span className="text-[10px] text-slate-500">{sc.time}</span>
+                  <span className="text-[10px] text-slate-400 font-mono shrink-0">{sc.metric}</span>
                 </div>
               </div>
             ))}

@@ -25,6 +25,10 @@
                           "qa/synthetic-testing",
                           "domain/network-resilience",
                           "db/falkordb-advanced-analytics",
-                          "domain/chaos-remediation"
+                          "domain/chaos-remediation",
+                          "arch/api-design",
+                          "security/api-security",
+                          "db/event-streaming",
+                          "ops/cicd-pipeline"
                       ]
 }

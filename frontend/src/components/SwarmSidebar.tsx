@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Network,
   History,
+  BrainCircuit,
   BarChart3,
   Terminal,
   Zap,
@@ -37,6 +38,7 @@ export default function SwarmSidebar({
   const navItems = [
     { id: "dashboard", label: "Swarm War Room", icon: LayoutDashboard, badge: "LIVE" },
     { id: "graph", label: "Graph Explorer", icon: Network, badge: null },
+    { id: "blackboard", label: "Agent Blackboard", icon: BrainCircuit, badge: "Track 02" },
     { id: "memory", label: "Procedural Memory", icon: History, badge: "v0.99" },
     { id: "benchmarks", label: "GraphBLAS vs SQL", icon: BarChart3, badge: "154x" },
     { id: "cypher", label: "openCypher REPL", icon: Terminal, badge: null },

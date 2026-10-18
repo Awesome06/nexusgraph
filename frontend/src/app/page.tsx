@@ -661,10 +661,19 @@ export default function NexusGraphDashboard() {
             } else if (tab === "benchmarks") {
               setConsoleInitialTab("benchmark");
               setIsConsoleOpen(true);
+            } else if (tab === "blackboard") {
+              setActiveGraph("blackboard_demo");
+              fetchGraphTopology("blackboard_demo");
+              setIsConsoleOpen(false);
             } else if (tab === "memory") {
               setActiveGraph("procedural_memory");
               fetchGraphTopology("procedural_memory");
-            } else if (tab === "graph" || tab === "dashboard") {
+              setIsConsoleOpen(false);
+            } else if (tab === "dashboard") {
+              setActiveGraph("org_brain");
+              fetchGraphTopology("org_brain");
+              setIsConsoleOpen(false);
+            } else if (tab === "graph") {
               setIsConsoleOpen(false);
             }
           }}
@@ -740,7 +749,7 @@ export default function NexusGraphDashboard() {
             {/* If in Graph Explorer Mode, GraphCanvas occupies all 12 columns */}
             {activeTab !== "graph" && (
               <div className="lg:col-span-5 flex flex-col gap-3 min-h-0 h-full overflow-hidden">
-                {activeTab === "memory" ? (
+                {activeTab === "memory" || activeGraph === "procedural_memory" ? (
                   /* Dedicated Procedural & Episodic Memory Inspector */
                   <div className="flex-1 flex flex-col gap-3 min-h-0 h-full overflow-hidden">
                     <div className="bg-[#0E0E12] rounded-xl p-4 border border-white/[0.08] shadow-xl flex flex-col gap-3">
@@ -798,6 +807,92 @@ export default function NexusGraphDashboard() {
                       >
                         <BrainCircuit className="w-3.5 h-3.5" />
                         <span>Traverse & Reinforce Runbook →</span>
+                      </button>
+                    </div>
+
+                    <div className="flex-1 min-h-0">
+                      <AgentTracePanel
+                        events={events}
+                        isStreaming={isStreaming}
+                        currentAgent={currentAgent}
+                        activeStage={activeStage}
+                        playbackSpeed={playbackSpeed}
+                        onSpeedChange={setPlaybackSpeed}
+                        onOpenWorkflows={() => setIsWorkflowsModalOpen(true)}
+                        activeScenarioTitle={activeScenarioTitle}
+                      />
+                    </div>
+                  </div>
+                ) : activeTab === "blackboard" || activeGraph.startsWith("blackboard") ? (
+                  /* Dedicated Multi-Agent Shared Blackboard Inspector (Track 02) */
+                  <div className="flex-1 flex flex-col gap-3 min-h-0 h-full overflow-hidden">
+                    <div className="bg-[#0E0E12] rounded-xl p-4 border border-white/[0.08] shadow-xl flex flex-col gap-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                        <div className="flex items-center gap-2">
+                          <BrainCircuit className="w-4 h-4 text-purple-400" />
+                          <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                            Multi-Agent Shared Blackboard
+                          </h3>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-[10px] font-mono text-purple-400">
+                          TRACK 02 COORDINATION
+                        </span>
+                      </div>
+
+                      {/* Swarm Coordination Claims Card */}
+                      <div className="bg-[#141418] p-3 rounded-lg border border-white/[0.06] font-mono text-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wider">Swarm Handoff Pipeline</span>
+                          <span className="text-[10px] text-purple-400 font-bold">3 Agents Synchronized</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="p-2 rounded bg-black/40 border border-cyan-500/20 text-center">
+                            <span className="text-[10px] text-cyan-400 font-bold block">1. RECON</span>
+                            <span className="text-[9px] text-slate-400">Claims Blast Radius</span>
+                          </div>
+                          <div className="p-2 rounded bg-black/40 border border-purple-500/20 text-center">
+                            <span className="text-[10px] text-purple-400 font-bold block">2. HISTORIAN</span>
+                            <span className="text-[9px] text-slate-400">Recalls Runbook</span>
+                          </div>
+                          <div className="p-2 rounded bg-black/40 border border-emerald-500/20 text-center">
+                            <span className="text-[10px] text-emerald-400 font-bold block">3. EXECUTOR</span>
+                            <span className="text-[9px] text-slate-400">Remediates & Verifies</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Live Blackboard Records */}
+                      <div className="bg-[#141418] p-3 rounded-lg border border-white/[0.06] font-mono text-xs space-y-1.5">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wider">Shared Graph Entities</span>
+                          <span className="text-[10px] text-cyan-400 font-bold">Atomic Transactions</span>
+                        </div>
+                        <div className="flex items-center justify-between p-1.5 rounded bg-black/40 border border-white/[0.04]">
+                          <span className="text-[11px] text-cyan-300">Task: task_cascade_isolate</span>
+                          <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[9px] font-bold">CLAIMED</span>
+                        </div>
+                        <div className="flex items-center justify-between p-1.5 rounded bg-black/40 border border-white/[0.04]">
+                          <span className="text-[11px] text-purple-300">Finding: commit_8f92a1c</span>
+                          <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[9px] font-bold">DISCOVERED</span>
+                        </div>
+                        <div className="flex items-center justify-between p-1.5 rounded bg-black/40 border border-white/[0.04]">
+                          <span className="text-[11px] text-emerald-300">Action: rollback & flush_pool</span>
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-bold">PROPOSED</span>
+                        </div>
+                      </div>
+
+                      {/* Trigger Button */}
+                      <button
+                        onClick={() =>
+                          handleTriggerInvestigation(
+                            "Investigate API Gateway Latency Spike and coordinate swarm resolution on blackboard",
+                            "scenario-latency-cascade"
+                          )
+                        }
+                        className="w-full py-2 px-3 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-mono font-semibold transition flex items-center justify-center gap-2"
+                      >
+                        <BrainCircuit className="w-3.5 h-3.5" />
+                        <span>Run Swarm Blackboard Handoff →</span>
                       </button>
                     </div>
 
