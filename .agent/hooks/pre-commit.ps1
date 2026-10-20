@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 # .agent/hooks/pre-commit.ps1
 # 1. Updates vendored submodules (.agent/.registry) from vault upstream.
-# 2. Analyzes repository stack signatures and synchronizes skills into .agents/skills/ (Antigravity customization root).
+# 2. Analyzes repository stack signatures and context-corroborates skills into .agents/skills/ (Antigravity customization root).
 # 3. Lints wiki knowledge graph links.
 
 $repoRoot = git rev-parse --show-toplevel 2>$null
@@ -17,7 +17,6 @@ $agentsSkillsDir = ".agents\skills"
 # Step 1: Submodule Initialization & Automatic Synchronization
 # ---------------------------------------------------------
 if (Test-Path ".gitmodules") {
-    # Ensure submodule is initialized if missing
     if (-not (Test-Path "$submodulePath/skill-map.json")) {
         Write-Host "Antigravity Sync: Initializing $submodulePath submodule..." -ForegroundColor Yellow
         git submodule update --init --recursive $submodulePath 2>$null
@@ -25,8 +24,10 @@ if (Test-Path ".gitmodules") {
 
     $submoduleUpdated = $false
     $localVault = Resolve-Path (Join-Path $repoRoot "..\agent-skills-vault") -ErrorAction SilentlyContinue
+    if (-not $localVault) {
+        $localVault = Resolve-Path (Join-Path $repoRoot "..\..\agent-skills-vault") -ErrorAction SilentlyContinue
+    }
 
-    # Fast-path: Sibling local agent-skills-vault repository synchronization
     if ($localVault -and (Test-Path (Join-Path $localVault "skill-map.json"))) {
         try {
             $vaultHead = (git -C $localVault rev-parse HEAD 2>$null).Trim()
@@ -44,7 +45,6 @@ if (Test-Path ".gitmodules") {
             }
         } catch {}
     } else {
-        # Remote tracking fallback: fetch latest remote commits if submodule is tracking
         try {
             $currentSubHead = (git -C $submodulePath rev-parse HEAD 2>$null).Trim()
             git submodule update --remote --recursive $submodulePath 2>$null
@@ -56,20 +56,18 @@ if (Test-Path ".gitmodules") {
         } catch {}
     }
 
-    # Stage the updated submodule gitlink pointer so the commit captures the upgrade
     if ($submoduleUpdated) {
         git add $submodulePath
         Write-Host "Antigravity Sync: Submodule gitlink pointer staged for commit." -ForegroundColor Green
     }
 }
 
-# Exit silently if vault registry map is still unavailable
 if (-not (Test-Path $registryMapPath)) { exit 0 }
 
 $map = Get-Content $registryMapPath -Raw | ConvertFrom-Json
 
 # ---------------------------------------------------------
-# Step 2: Stack Detection & Skill Synchronization (.agents/skills/)
+# Step 2: Context-Corroborated Skill Resolution (.agents/skills/)
 # ---------------------------------------------------------
 $state = [ordered]@{
     version        = "1.0.0"
@@ -90,8 +88,6 @@ if (Test-Path $activeSkillsPath) {
     } catch {}
 }
 
-$requiredSkills = @()
-
 # Preload manifest contents across repository (depth 4)
 $manifests = @()
 $manifestFiles = Get-ChildItem -Path "." -Include "requirements*.txt", "pyproject.toml", "Pipfile", "package.json", "go.mod", "Cargo.toml", "uv.lock" -Recurse -Depth 4 -ErrorAction SilentlyContinue |
@@ -103,6 +99,53 @@ foreach ($mf in $manifestFiles) {
     } catch {}
 }
 $combinedManifestContent = $manifests -join "`n"
+
+# Context Guard: Ambiguous generic filenames must be corroborated by dependency tokens or source imports
+$SpecializedSkillGuards = @{
+    "frameworks/fastapi"             = @("fastapi", "uvicorn")
+    "frameworks/discord-bot"         = @("discord", "nextcord", "hikari", "discord.py")
+    "db/event-streaming"             = @("kafka", "aiokafka", "confluent_kafka", "rabbitmq", "pika")
+    "ai/agent-orchestration"         = @("langgraph", "crewai", "autogen", "swarm")
+    "db/graph-falkordb"              = @("falkordb", "opencypher", "redis-graph")
+    "data/tabular-sync"              = @("gspread", "google-api", "sheets", "tabular", "openpyxl")
+    "domain/canvas-physics"          = @("d3-force", "cytoscape", "xyflow", "force-directed", "canvas-physics")
+    "domain/zt-proxy"                = @("wireguard", "ebpf", "bpf", "tun", "zt-proxy")
+    "domain/opportunity-aggregation" = @("devfolio", "unstop", "clist", "aioimaplib", "opportunity")
+    "ops/resilient-scheduling"       = @("apscheduler", "celery", "cron", "schedule")
+}
+
+function Test-SkillContextCorroborated([string]$skillPath, [string]$manifestContent) {
+    if (-not $SpecializedSkillGuards.ContainsKey($skillPath)) {
+        return $true
+    }
+
+    $requiredTokens = $SpecializedSkillGuards[$skillPath]
+    foreach ($tok in $requiredTokens) {
+        if ($manifestContent -match "(?i)\b$([regex]::Escape($tok))\b") {
+            return $true
+        }
+    }
+
+    # Inspect top 30 lines of source code imports
+    $sourceFiles = Get-ChildItem -Path "." -Include "*.py", "*.ts", "*.js", "*.go" -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '[\\/](\.agents?|\.git|node_modules|vendor|\.venv)[\\/]' } |
+        Select-Object -First 20
+
+    foreach ($sf in $sourceFiles) {
+        try {
+            $head = (Get-Content $sf.FullName -TotalCount 30 -ErrorAction SilentlyContinue) -join "`n"
+            foreach ($tok in $requiredTokens) {
+                if ($head -match "(?i)\b$([regex]::Escape($tok))\b") {
+                    return $true
+                }
+            }
+        } catch {}
+    }
+
+    return $false
+}
+
+$candidateSkills = @()
 
 # Scan repository signatures from map triggers
 foreach ($prop in $map.psobject.properties) {
@@ -145,13 +188,33 @@ foreach ($prop in $map.psobject.properties) {
     }
 
     if ($matched) {
-        $requiredSkills += $prop.Value
+        $candidateSkills += $prop.Value
     }
 }
-$requiredSkills = $requiredSkills | Select-Object -Unique
+$candidateSkills = $candidateSkills | Select-Object -Unique
 
-# Merge explicitly declared active skills with detected required skills
-$allTargetSkills = @($state.active_skills + $requiredSkills) | Select-Object -Unique
+# Filter candidates through Context Corroboration Guard
+$corroboratedSkills = @()
+foreach ($cand in $candidateSkills) {
+    if (Test-SkillContextCorroborated -skillPath $cand -manifestContent $combinedManifestContent) {
+        $corroboratedSkills += $cand
+    } else {
+        Write-Host "Antigravity Context: Rejecting uncorroborated skill candidate -> $cand" -ForegroundColor DarkGray
+    }
+}
+
+# Merge explicitly declared active skills with corroborated detected skills
+$allTargetSkills = @($state.active_skills + $corroboratedSkills) | Select-Object -Unique
+
+# Filter active skills through context verification to prune historical false-positives
+$verifiedTargetSkills = @()
+foreach ($target in $allTargetSkills) {
+    if (Test-SkillContextCorroborated -skillPath $target -manifestContent $combinedManifestContent) {
+        $verifiedTargetSkills += $target
+    } else {
+        Write-Host "Antigravity Context: Evicting uncorroborated active skill -> $target" -ForegroundColor Yellow
+    }
+}
 
 $driftDetected = $false
 
@@ -160,6 +223,7 @@ if (-not (Test-Path $agentsSkillsDir)) {
 }
 
 $globalSkills = @('code-review', 'doc-sync', 'error-discipline', 'git-release', 'incident-triaging', 'security-auditor', 'test-discipline', 'workspace-initializer', 'repo-wiki')
+$protectedSkills = @('design-orchestrator', 'hackathon-evaluation-governance')
 
 function Link-SkillDirectory([string]$linkTarget, [string]$destinationDir, [string]$skillFolder) {
     $destPath = Join-Path $destinationDir $skillFolder
@@ -172,15 +236,14 @@ function Link-SkillDirectory([string]$linkTarget, [string]$destinationDir, [stri
     }
 }
 
-foreach ($req in $allTargetSkills) {
+foreach ($req in $verifiedTargetSkills) {
     $folderName = Split-Path $req -Leaf
     if ($folderName -in $globalSkills -or (Test-Path (Join-Path $repoRoot "$submodulePath\globals\$folderName"))) { continue }
 
     $targetPath = Join-Path $repoRoot "$submodulePath\$req"
     if (-not (Test-Path $targetPath)) {
-        $siblingTarget = Join-Path $repoRoot "..\agent-skills-vault\$req"
-        if (Test-Path $siblingTarget) {
-            $targetPath = $siblingTarget
+        if ($localVault -and (Test-Path (Join-Path $localVault $req))) {
+            $targetPath = Join-Path $localVault $req
         } else {
             continue
         }
@@ -200,17 +263,15 @@ foreach ($req in $allTargetSkills) {
     }
 }
 
-# Protected local project skills that must NEVER be pruned
-$protectedSkills = @('design-orchestrator', 'hackathon-evaluation-governance')
-$allTargetFolderNames = @($allTargetSkills | ForEach-Object { Split-Path $_ -Leaf })
+$verifiedFolderNames = @($verifiedTargetSkills | ForEach-Object { Split-Path $_ -Leaf })
 
-# Prune stale domain skills in .agents\skills (only if it is a junction/symlink)
+# Prune uncorroborated or stale domain skills in .agents\skills
 $currentAgentsSkills = Get-ChildItem -Path $agentsSkillsDir -Directory -ErrorAction SilentlyContinue
 foreach ($dir in $currentAgentsSkills) {
-    if ($dir.Name -notin $allTargetFolderNames -and $dir.Name -notin $protectedSkills) {
+    if ($dir.Name -notin $verifiedFolderNames -and $dir.Name -notin $protectedSkills) {
         $isReparsePoint = [bool]($dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
         if ($isReparsePoint) {
-            Write-Host "Antigravity Sync: Pruning stale skill link -> .agents\skills\$($dir.Name)" -ForegroundColor Yellow
+            Write-Host "Antigravity Sync: Pruning uncorroborated skill link -> .agents\skills\$($dir.Name)" -ForegroundColor Yellow
             cmd.exe /c rmdir "$($dir.FullName)" 2>$null
             if (Test-Path $dir.FullName) {
                 Remove-Item -Path $dir.FullName -Force -ErrorAction SilentlyContinue
@@ -221,9 +282,11 @@ foreach ($dir in $currentAgentsSkills) {
     }
 }
 
+$state.active_skills = @($verifiedTargetSkills)
+
 if ($driftDetected) {
     $state | ConvertTo-Json -Depth 4 | Set-Content -Path $activeSkillsPath -Encoding utf8
-    Write-Host "Antigravity Sync: Active skills updated. Staging tracker..." -ForegroundColor Green
+    Write-Host "Antigravity Sync: Active skills context-verified. Staging tracker..." -ForegroundColor Green
     git add $activeSkillsPath
 }
 
@@ -231,8 +294,8 @@ if ($driftDetected) {
 # Step 3: Knowledge Graph Wiki Validation
 # ---------------------------------------------------------
 $wikiEnginePath = "$submodulePath\scripts\wiki-engine.py"
-if (-not (Test-Path $wikiEnginePath) -and (Test-Path "..\agent-skills-vault\scripts\wiki-engine.py")) {
-    $wikiEnginePath = "..\agent-skills-vault\scripts\wiki-engine.py"
+if (-not (Test-Path $wikiEnginePath) -and $localVault -and (Test-Path "$localVault\scripts\wiki-engine.py")) {
+    $wikiEnginePath = "$localVault\scripts\wiki-engine.py"
 }
 if ((Test-Path "wiki") -and (Test-Path $wikiEnginePath)) {
     if (Get-Command python -ErrorAction SilentlyContinue) {
