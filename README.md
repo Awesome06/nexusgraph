@@ -1,16 +1,14 @@
 # NexusGraph — Autonomous Engineering Brain & Incident Remediation Swarm
 
-[![FalkorDB Graph Hacks 2026](https://img.shields.io/badge/FalkorDB-Graph_Hacks_2026-blueviolet.svg)](https://www.falkordb.com/)
-[![Track Qualification](https://img.shields.io/badge/Tracks-01%20%7C%2002%20%7C%2003-emerald.svg)]()
 [![Cypher Engine](https://img.shields.io/badge/Cypher-GraphBLAS-cyan.svg)]()
 [![Test Suite](https://img.shields.io/badge/Tests-10%2F10%20Passed-brightgreen.svg)]()
 [![Live Dashboard](https://img.shields.io/badge/Live_Dashboard-Vercel_Edge-black.svg?logo=vercel)](https://nexusgraph-mu.vercel.app/)
 [![Live API Docs](https://img.shields.io/badge/Live_API-Render_HTTPS-46E3B7.svg?logo=render)](https://nexusgraph-v8n0.onrender.com/docs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **NexusGraph** is an autonomous multi-agent engineering swarm powered natively by **FalkorDB** as its active context, shared coordination blackboard, and procedural memory layer. Built for **FalkorDB Graph Hacks 2026**, it resolves production incidents by combining multi-hop blast-radius graph traversals, organizational decision provenance (ADRs), and cross-session incident memory to isolate and roll back breaking changes in seconds.
+> **NexusGraph** is an autonomous multi-agent engineering swarm powered natively by **FalkorDB** as its active context, shared coordination blackboard, and procedural memory layer. It resolves production incidents by combining multi-hop blast-radius graph traversals, organizational decision provenance (ADRs), and cross-session incident memory to isolate and roll back breaking changes in seconds.
 
-[Live Dashboard](https://nexusgraph-mu.vercel.app/) | [Live API Docs](https://nexusgraph-v8n0.onrender.com/docs) | [Track Qualification](#competition-track-qualification) | [System Architecture](#system-architecture--multigraph-topology) | [FastMCP Cypher Tools](#cypher-query-contracts--fastmcp-tool-suite) | [Benchmarks](#performance--quality-benchmarks) | [Deployment](#quick-start--deployment)
+[Live Dashboard](https://nexusgraph-mu.vercel.app/) | [Live API Docs](https://nexusgraph-v8n0.onrender.com/docs) | [System Architecture](#system-architecture--multigraph-topology) | [FastMCP Cypher Tools](#cypher-query-contracts--fastmcp-tool-suite) | [Benchmarks](#performance--quality-benchmarks) | [Deployment](#quick-start--deployment)
 
 ---
 
@@ -18,23 +16,11 @@
 
 ---
 
-## Competition Track Qualification
-
-NexusGraph aligns natively with all three Graph Hacks competition tracks simultaneously:
-
-| Track | Theme | Autonomous Implementation & FalkorDB Driver | Source Verification |
-| :--- | :--- | :--- | :--- |
-| **Track 01** | **Agents That Act on Connected Data** | Autonomous blast-radius calculation, graph centrality bottleneck detection, and automated rollback execution via FastMCP tools. Variable-length path traversal (`<-[:DEPENDS_ON*1..4]-`), in-degree centrality (`count(dependent)`), and graph state mutations (`SET s.status = 'HEALTHY'`). | [`graph_tools.py`](backend/app/mcp_server/graph_tools.py)<br/>[`recon_agent.py`](backend/app/agents/recon_agent.py) |
-| **Track 02** | **Agent Memory & Coordination** | Three specialized agents (`Recon`, `Historian`, `Executor`) coordinate through a shared FalkorDB Blackboard using per-session multi-tenant graph isolation (`db.select_graph()`), Blackboard graphs (`blackboard_<session_id>`), and cross-session episodic memory (`procedural_memory`). | [`falkor_client.py`](backend/app/db/falkor_client.py)<br/>[`orchestrator.py`](backend/app/agents/orchestrator.py) |
-| **Track 03** | **Company Brain** | Connects Engineers, Teams, Services, Commits, and Architecture Decision Records (ADRs) so every system decision traces to its human owner and historical rationale via native Cypher `shortestPath((p:Person)-[*..6]-(s:Service))` and ADR violation detection. | [`seed.py`](backend/app/db/seed.py)<br/>[`historian_agent.py`](backend/app/agents/historian_agent.py) |
-
----
-
 ## Design Philosophy & System Invariants
 
 Before modifying this codebase, adhere to these architectural invariants:
 
-1. **Graph-Native Coordination (Rule 3 Compliance):** No flat vector RAG, tabular relational joins, or in-memory Python dictionaries for agent coordination. All swarm state and decision paths reside directly within FalkorDB graph structures.
+1. **Graph-Native Coordination :** No flat vector RAG, tabular relational joins, or in-memory Python dictionaries for agent coordination. All swarm state and decision paths reside directly within FalkorDB graph structures.
 2. **Strict Multigraph Namespace Isolation:** Agents operate across three isolated graph spaces (`org_brain`, `procedural_memory`, `blackboard_<session_id>`). Ephemeral hypotheses never pollute permanent organizational topology.
 3. **Deterministic FastMCP Query Contracts:** Swarm capabilities are exposed as standardized FastMCP tools executing deterministic openCypher compiled directly onto GraphBLAS sparse matrix operations.
 4. **Zero-Hallucination Grounding:** Remediation proposals and rollbacks must anchor to verified graph nodes (Commit SHA, Service Name, Runbook ID) validated via Cypher traversals.
@@ -81,7 +67,7 @@ graph TD
 ## Graph Necessity: Architectural Justification & Algorithmic Complexity
 
 > [!IMPORTANT]
-> **FalkorDB Graph Hacks Rule 3 Compliance:** NexusGraph fundamentally relies on graph-native data modeling. Removing FalkorDB invalidates core system functionality:
+> NexusGraph fundamentally relies on graph-native data modeling. Removing FalkorDB invalidates core system functionality:
 > 1. **Inter-Agent Coordination:** Agents communicate exclusively by writing and querying `(:Task)-[:ASSIGNED_TO]->(:Finding)-[:HANDOFF_TO]->(:Task)` nodes inside FalkorDB's per-session blackboard.
 > 2. **Variable-Length Path Complexity:** Finding a 4-hop blast radius in relational SQL requires recursive Common Table Expressions (CTEs) executing exponential repeated self-joins ($\mathcal{O}(b^d)$ with branching factor $b$ and depth $d$). FalkorDB executes traversals via GraphBLAS sparse adjacency matrix multiplication ($\mathcal{O}(k \cdot \text{nnz}(A))$ where $\text{nnz}$ is non-zero edge entries), bounding execution to sub-15ms.
 > 3. **ADR Governance & Policy Enforcement:** Traverses hyper-connected paths between commits, authors, services, and architecture decisions (`(Commit)-[:DEPLOYED_TO]->(Service)<-[:GOVERNS]-(ADR)`).
@@ -309,7 +295,7 @@ NexusGraph is deployed live with zero infrastructure costs ($0 budget, no credit
 | :--- | :--- | :--- | :--- |
 | **Command Center Dashboard** | **[https://nexusgraph-mu.vercel.app](https://nexusgraph-mu.vercel.app/)** | Vercel Edge Network (Next.js 14 App Router) | [`frontend/vercel.json`](frontend/vercel.json) |
 | **Backend API & Swagger** | **[https://nexusgraph-v8n0.onrender.com/docs](https://nexusgraph-v8n0.onrender.com/docs)** | Render.com Web Service (FastAPI + LangGraph) | [`render.yaml`](render.yaml) |
-| **Graph Engine** | `r-6jissuruar.instance-k5i62m7ep.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud:64801` | FalkorDB Cloud Free Tier (Bolt Protocol) | [`.env.example`](.env.example) |
+| **Graph Engine** | `r-6jissuruar.instance-k5i62m7ep.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud:64801` | FalkorDB Cloud (Bolt Protocol) | [`.env.example`](.env.example) |
 | **Health & Multigraph Probe** | **[https://nexusgraph-v8n0.onrender.com/api/health](https://nexusgraph-v8n0.onrender.com/api/health)** | Native Bolt Status (org_brain, procedural_memory, blackboard) | [`backend/app/main.py`](backend/app/main.py) |
 
 For step-by-step setup, TLS configuration, and live verification commands, refer to the [Zero-Cost Production Deployment Guide](wiki/runbooks/zero-cost-deployment.md).
@@ -334,46 +320,11 @@ NexusGraph maintains atomic architectural documentation adhering to the `repo-wi
 powershell -File .\.agent\wiki.ps1 --root wiki export --format cypher --output wiki-graph.cypher
 ```
 
----
-
-## Antigravity Agent Governance & Dynamic Skill Linking
-
-NexusGraph interfaces with **Google Antigravity** using the two-tier skill architecture and 3-tier manifest-aware synchronization pipeline ported from [`AgenticTemplate`](https://github.com/Awesome06/AgenticTemplate):
-
-```mermaid
-graph TD
-    A[Codebase Manifests<br/>requirements.txt, package.json, pyproject.toml] --> B[Git Pre-Commit Hook<br/>.agent/hooks/pre-commit.ps1]
-    B --> C[3-Tier Manifest Inspector<br/>Direct Root &middot; Deep Glob &middot; Semantic Keyword]
-    C --> D[Vault Submodule Junctions<br/>.agent/.registry &rarr; .agent/skills/]
-    D --> E[Active Skills Tracker<br/>.agent/.active-skills.json]
-    E --> F[Antigravity AI Agent<br/>Strict Invariant Enforcement via AGENTS.md]
-```
-
-### Active Domain Skills (17 Configured)
-
-| Domain | Active Linked Skill | Invariants Enforced |
-| :--- | :--- | :--- |
-| **PaaS Deployment** | `zero-cost-paas` | Declarative IaC (`render.yaml`, `vercel.json`), health check probes, remote TLS negotiation. |
-| **Next.js 14 App Router** | `nextjs-app-router` | Server Components by default, `error.tsx` recovery boundaries, `loading.tsx` skeletons. |
-| **Canvas Physics** | `canvas-physics` | Numerical velocity clamping, `cancelAnimationFrame` cleanup, inverse affine coordinate transforms. |
-| **Streaming Protocol** | `sse-streaming` | Event-stream framing (`event: <type>\ndata: <json>\n\n`), non-blocking async generator pipes. |
-| **Graph Database** | `graph-falkordb` | Parameterized Cypher queries, bounded path expansions (`[*1..4]`), multigraph tenant isolation. |
-| **Swarm Orchestration** | `agent-orchestration`| `StateGraph`, deterministic state reducers (`Annotated[list, operator.add]`), recursion ceilings. |
-| **Model Context Protocol**| `mcp-server` | FastMCP typed schemas, Pydantic tool arguments, and structured error propagation. |
-| **FastAPI Backend** | `fastapi` | Lifespan context management, non-blocking handlers, typed Pydantic V2 responses. |
-| **Performance Benchmark** | `perf-benchmarking` | GraphBLAS vs SQL recursive CTE latency comparisons, deterministic benchmarking models. |
-| **Schema Evolution** | `schema-evolution` | Node label uniqueness, indexed lookup properties, and migration idempotency. |
-| **Containerization** | `docker` | Multi-stage container builds, non-root user execution, Docker Compose orchestration. |
-| **Architecture Modeling** | `c4-design` | C4 model system context, container topology diagrams, and invariant documentation. |
-
----
-
 ## Directory Structure
 
 ```text
 nexusgraph/
 ├── .agent/
-│   ├── .registry/             # Git submodule: centralized agent-skills-vault (commit 6b40af8)
 │   ├── hooks/
 │   │   ├── pre-commit.ps1     # 3-tier manifest-aware skill linking & wiki linting (Windows)
 │   │   └── pre-commit.sh      # 3-tier manifest-aware skill linking & wiki linting (POSIX)
@@ -469,13 +420,6 @@ backend\tests\test_swarm.py::test_full_swarm_pipeline_execution PASSED   [100%]
 ## Hackathon Submission Details
 
 - **Project:** NexusGraph — Autonomous Engineering Brain & Incident Remediation Swarm
-- **Target Event:** FalkorDB Graph Hacks 2026
-- **Tracks Qualified Simultaneously:**
-  - **Track 01:** Agents That Act on Connected Data
-  - **Track 02:** Agent Memory & Coordination
-  - **Track 03:** Company Brain
 - **Team Members:**
   - Mrigank Bhatnagar ([@Awesome06](https://github.com/Awesome06))
-- **AI Assistant Disclosure:**
-  - In compliance with Hackathon Rule 11, this project was architected, directed, and deployed by the author, with implementation code and tests generated in collaboration with Antigravity AI (Google DeepMind). The author defined the system architecture, multigraph isolation strategy, FastMCP tool specifications, and cloud deployment configurations, and conducted end-to-end verification and testing.
 - **License:** MIT
