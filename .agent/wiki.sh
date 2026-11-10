@@ -1,30 +1,28 @@
-#!/bin/sh
+#!/usr/bin/env sh
 # .agent/wiki.sh - Fast launcher for repository wiki and knowledge graph tool
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
-ENGINE="$REPO_ROOT/.agent/.registry/scripts/wiki-engine.py"
+set -e
 
-# Local development fallback if submodule is uninitialized
-if [ ! -f "$ENGINE" ] && [ -f "$REPO_ROOT/../../agent-skills-vault/scripts/wiki-engine.py" ]; then
-    ENGINE="$REPO_ROOT/../../agent-skills-vault/scripts/wiki-engine.py"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+ENGINE_PATH=""
+if [ -n "$AGENT_SKILLS_VAULT_PATH" ] && [ -f "$AGENT_SKILLS_VAULT_PATH/scripts/wiki-engine.py" ]; then
+    ENGINE_PATH="$AGENT_SKILLS_VAULT_PATH/scripts/wiki-engine.py"
+else
+    for candidate in "$REPO_ROOT/../agent-skills-vault" "$REPO_ROOT/../../agent-skills-vault" "$HOME/.gemini/agent-skills-vault"; do
+        if [ -f "$candidate/scripts/wiki-engine.py" ]; then
+            ENGINE_PATH="$candidate/scripts/wiki-engine.py"
+            break
+        fi
+    done
 fi
 
-if [ ! -f "$ENGINE" ]; then
-    echo "Error: Wiki engine not found at $ENGINE. Ensure .agent/.registry submodule is initialized via 'git submodule update --init'." >&2
+if [ -z "$ENGINE_PATH" ]; then
+    echo "Error: wiki-engine.py not found. Ensure agent-skills-vault is available." >&2
     exit 1
 fi
 
-PY_CMD=""
-if command -v python3 >/dev/null 2>&1; then
-    PY_CMD="python3"
-elif command -v python >/dev/null 2>&1; then
-    PY_CMD="python"
+if [ "$#" -eq 0 ]; then
+    python3 "$ENGINE_PATH" --help 2>/dev/null || python "$ENGINE_PATH" --help
 else
-    echo "Error: Python runtime not found in PATH." >&2
-    exit 1
-fi
-
-if [ $# -eq 0 ]; then
-    "$PY_CMD" "$ENGINE" --help
-else
-    "$PY_CMD" "$ENGINE" "$@"
+    python3 "$ENGINE_PATH" "$@" 2>/dev/null || python "$ENGINE_PATH" "$@"
 fi

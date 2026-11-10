@@ -1,6 +1,9 @@
 # setup.ps1 - Antigravity Agent & Git Hook Setup
 [CmdletBinding()]
-param()
+param(
+    [ValidateSet("personal", "team", "oss", "research", "author-oss")]
+    [string]$Type = "personal"
+)
 
 $ErrorActionPreference = "Stop"
 Write-Host "Configuring Antigravity Workspace..." -ForegroundColor Cyan
@@ -13,55 +16,87 @@ if ($LASTEXITCODE -ne 0 -or -not $repoRoot) {
 }
 Set-Location -Path $repoRoot
 
-# 2. Initialize or vendor .agent/.registry submodule
-if (-not (Test-Path ".agent/.registry/skill-map.json")) {
-    Write-Host "Initializing .agent/.registry submodule from vault..." -ForegroundColor Yellow
-    git submodule update --init --recursive
-    if (-not (Test-Path ".agent/.registry/skill-map.json")) {
-        try {
-            git submodule add --force https://github.com/Awesome06/agent-skills-vault.git .agent/.registry
-        } catch {
-            Write-Warning "Could not automatically add submodule. If offline or uncommitted, run 'git submodule update --init' later."
+# 2. Locate Central Agent Skills Vault
+$centralVault = $env:AGENT_SKILLS_VAULT_PATH
+if (-not $centralVault -or -not (Test-Path "$centralVault/skill-map.json")) {
+    $searchPaths = @(
+        (Join-Path $repoRoot "..\agent-skills-vault"),
+        (Join-Path $repoRoot "..\..\agent-skills-vault"),
+        "C:\Users\Bhatn\OneDrive\Desktop\Projects\agent-skills-vault",
+        (Join-Path $HOME ".gemini\agent-skills-vault")
+    )
+    foreach ($p in $searchPaths) {
+        if (Test-Path "$p/skill-map.json") {
+            $centralVault = (Resolve-Path $p).Path
+            break
         }
     }
-} else {
-    Write-Host "Updating .agent/.registry submodule..." -ForegroundColor Gray
-    git submodule update --remote --recursive 2>$null
 }
 
-# 3. Synchronize Global Skills to Antigravity Global Config (~/.gemini/config/skills)
-$homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
-$globalConfigSkills = Join-Path $homeDir ".gemini\config\skills"
-$registryGlobalsDir = Join-Path $repoRoot ".agent\.registry\globals"
+if ($centralVault) {
+    Write-Host "Discovered central agent-skills-vault at $centralVault" -ForegroundColor Green
+} else {
+    Write-Warning "Central agent-skills-vault not found in standard paths. Set AGENT_SKILLS_VAULT_PATH if located elsewhere."
+}
 
-if (Test-Path $registryGlobalsDir) {
-    if (-not (Test-Path $globalConfigSkills)) {
-        New-Item -ItemType Directory -Path $globalConfigSkills -Force | Out-Null
+# 3. Ensure Vault Exclusions in .git/info/exclude
+$excludeFile = ".git/info/exclude"
+if (Test-Path (Split-Path $excludeFile)) {
+    $excludePatterns = @(
+        "# Agent Skills Vault dynamic sidecar (Local developer harness)",
+        ".agent/.registry",
+        ".agents/skills/*",
+        ".agents/.skill-leases.json",
+        ".agents/.turn-cache.json",
+        ".agents/mode"
+    )
+    $existing = if (Test-Path $excludeFile) { Get-Content $excludeFile -Raw } else { "" }
+    $toAdd = @()
+    foreach ($pat in $excludePatterns) {
+        if ($pat -notmatch "^#" -and $existing -notmatch [regex]::Escape($pat)) {
+            $toAdd += $pat
+        }
     }
+    if ($toAdd.Count -gt 0) {
+        Add-Content -Path $excludeFile -Value ("`n" + $excludePatterns[0] + "`n" + ($toAdd -join "`n"))
+        Write-Host "Configured vault exclusions in $excludeFile." -ForegroundColor Green
+    }
+}
 
-    $globalSkills = Get-ChildItem -Path $registryGlobalsDir -Directory
-    foreach ($globalSkill in $globalSkills) {
-        $skillName = $globalSkill.Name
-        $targetSkillPath = $globalSkill.FullName
-        $linkSkillPath = Join-Path $globalConfigSkills $skillName
+# 4. Synchronize Global Skills to Antigravity Global Config (~/.gemini/config/skills)
+if ($centralVault) {
+    $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+    $globalConfigSkills = Join-Path $homeDir ".gemini\config\skills"
+    $registryGlobalsDir = Join-Path $centralVault "globals"
 
-        if (-not (Test-Path $linkSkillPath)) {
-            Write-Host "Linking global skill -> $skillName" -ForegroundColor Cyan
-            try {
-                New-Item -ItemType SymbolicLink -Path $linkSkillPath -Target $targetSkillPath -ErrorAction Stop | Out-Null
-            } catch {
-                if ($IsWindows -or ($env:OS -like "*Windows*")) {
-                    cmd.exe /c mklink /J "$linkSkillPath" "$targetSkillPath" | Out-Null
-                } else {
-                    ln -s "$targetSkillPath" "$linkSkillPath"
+    if (Test-Path $registryGlobalsDir) {
+        if (-not (Test-Path $globalConfigSkills)) {
+            New-Item -ItemType Directory -Path $globalConfigSkills -Force | Out-Null
+        }
+
+        $globalSkills = Get-ChildItem -Path $registryGlobalsDir -Directory
+        foreach ($globalSkill in $globalSkills) {
+            $skillName = $globalSkill.Name
+            $targetSkillPath = $globalSkill.FullName
+            $linkSkillPath = Join-Path $globalConfigSkills $skillName
+
+            if (-not (Test-Path $linkSkillPath)) {
+                Write-Host "Linking global skill -> $skillName" -ForegroundColor Cyan
+                try {
+                    New-Item -ItemType SymbolicLink -Path $linkSkillPath -Target $targetSkillPath -ErrorAction Stop | Out-Null
+                } catch {
+                    if ($IsWindows -or ($env:OS -like "*Windows*")) {
+                        cmd.exe /c mklink /J "$linkSkillPath" "$targetSkillPath" | Out-Null
+                    } else {
+                        ln -s "$targetSkillPath" "$linkSkillPath"
+                    }
                 }
             }
         }
     }
-    Write-Host "Global skills verified in $globalConfigSkills." -ForegroundColor Green
 }
 
-# 4. Configure Git pre-commit hook
+# 5. Configure Git pre-commit hook
 $hooksDir = ".git/hooks"
 $gitHookPath = "$hooksDir/pre-commit"
 
@@ -87,8 +122,6 @@ if (Test-Path $gitHookPath) {
         $updated = "$existing`n$agentTrigger`n"
         [System.IO.File]::WriteAllText((Convert-Path $gitHookPath), $updated, (New-Object System.Text.UTF8Encoding($false)))
         Write-Host "Appended Antigravity sync to existing pre-commit hook." -ForegroundColor Green
-    } else {
-        Write-Host "Antigravity sync is already configured in the pre-commit hook." -ForegroundColor Yellow
     }
 } else {
     $newHook = "#!/bin/sh`n$agentTrigger`n"
@@ -96,14 +129,16 @@ if (Test-Path $gitHookPath) {
     Write-Host "Created pre-commit hook with Antigravity sync (LF encoded)." -ForegroundColor Green
 }
 
-# Ensure shell scripts have executable bits registered in git
-git update-index --chmod=+x .agent/hooks/pre-commit.sh 2>$null
-git update-index --chmod=+x .agent/setup.sh 2>$null
+# 6. Apply Project Type Scaffolding
+if (Test-Path ".agent/scaffold.py") {
+    Write-Host "Applying Project Type Scaffolding ($Type)..." -ForegroundColor Yellow
+    python .agent/scaffold.py --type $Type
+}
 
-# 5. Run initial skill discovery immediately
+# 7. Run initial skill discovery immediately
 if (Test-Path ".agent/hooks/pre-commit.ps1") {
     Write-Host "Running initial skill synchronization..." -ForegroundColor Cyan
     & ".agent/hooks/pre-commit.ps1"
 }
 
-Write-Host "Workspace ready. Agent skills will validate and sync on every commit." -ForegroundColor Cyan
+Write-Host "Workspace ready ($Type mode). Agent skills will validate and sync on every commit." -ForegroundColor Cyan

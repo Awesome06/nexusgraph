@@ -7,18 +7,28 @@ param(
 
 $repoRoot = git rev-parse --show-toplevel 2>$null
 if (-not $repoRoot) { $repoRoot = "." }
-$enginePath = Join-Path $repoRoot ".agent\.registry\scripts\wiki-engine.py"
 
-# Local development fallback if submodule is uninitialized
-if (-not (Test-Path $enginePath)) {
-    $siblingEngine = Join-Path $repoRoot "..\..\agent-skills-vault\scripts\wiki-engine.py"
-    if (Test-Path $siblingEngine) {
-        $enginePath = $siblingEngine
+$searchPaths = @(
+    $env:AGENT_SKILLS_VAULT_PATH,
+    (Join-Path $repoRoot "..\agent-skills-vault"),
+    (Join-Path $repoRoot "..\..\agent-skills-vault"),
+    "C:\Users\Bhatn\OneDrive\Desktop\Projects\agent-skills-vault",
+    (Join-Path $HOME ".gemini\agent-skills-vault")
+)
+
+$enginePath = $null
+foreach ($sp in $searchPaths) {
+    if ($sp) {
+        $candidate = Join-Path $sp "scripts\wiki-engine.py"
+        if (Test-Path $candidate) {
+            $enginePath = (Resolve-Path $candidate).Path
+            break
+        }
     }
 }
 
-if (-not (Test-Path $enginePath)) {
-    Write-Error "Wiki engine not found at $enginePath. Ensure .agent/.registry submodule is initialized via 'git submodule update --init'."
+if (-not $enginePath) {
+    Write-Error "Wiki engine not found. Ensure agent-skills-vault is available locally or set AGENT_SKILLS_VAULT_PATH."
     exit 1
 }
 

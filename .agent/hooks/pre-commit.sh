@@ -13,51 +13,20 @@ ACTIVE_SKILLS=".agent/.active-skills.json"
 AGENTS_SKILLS_DIR=".agents/skills"
 
 # ---------------------------------------------------------
-# Step 1: Submodule Initialization & Automatic Synchronization
+# Step 1: Discover Central Agent Skills Vault (Zero Submodule)
 # ---------------------------------------------------------
-if [ -f ".gitmodules" ]; then
-    if [ ! -f "$REGISTRY_MAP" ]; then
-        echo "Antigravity Sync (POSIX): Initializing $SUBMODULE_PATH submodule..."
-        git submodule update --init --recursive "$SUBMODULE_PATH" 2>/dev/null
-    fi
-
-    SUBMODULE_UPDATED=0
-    LOCAL_VAULT=""
-    if [ -f "../agent-skills-vault/skill-map.json" ]; then
-        LOCAL_VAULT="../agent-skills-vault"
-    elif [ -f "../../agent-skills-vault/skill-map.json" ]; then
-        LOCAL_VAULT="../../agent-skills-vault"
-    fi
-
-    if [ -n "$LOCAL_VAULT" ]; then
-        VAULT_HEAD=$(git -C "$LOCAL_VAULT" rev-parse HEAD 2>/dev/null)
-        CURR_HEAD=$(git -C "$SUBMODULE_PATH" rev-parse HEAD 2>/dev/null)
-        if [ -n "$VAULT_HEAD" ] && [ "$VAULT_HEAD" != "$CURR_HEAD" ]; then
-            SUB_DIRTY=$(git -C "$SUBMODULE_PATH" status --porcelain 2>/dev/null)
-            if [ -z "$SUB_DIRTY" ]; then
-                git -C "$SUBMODULE_PATH" fetch "$LOCAL_VAULT" HEAD >/dev/null 2>&1
-                git -C "$SUBMODULE_PATH" checkout -q FETCH_HEAD >/dev/null 2>&1
-                SUBMODULE_UPDATED=1
-                echo "Antigravity Sync (POSIX): Updated $SUBMODULE_PATH to local vault commit $(echo "$VAULT_HEAD" | cut -c1-7)."
-            fi
+LOCAL_VAULT="${AGENT_SKILLS_VAULT_PATH:-}"
+if [ -z "$LOCAL_VAULT" ] || [ ! -f "$LOCAL_VAULT/skill-map.json" ]; then
+    for candidate in "$REPO_ROOT/../agent-skills-vault" "$REPO_ROOT/../../agent-skills-vault" "$HOME/.gemini/agent-skills-vault"; do
+        if [ -f "$candidate/skill-map.json" ]; then
+            LOCAL_VAULT="$(cd "$candidate" && pwd)"
+            break
         fi
-    else
-        CURR_HEAD=$(git -C "$SUBMODULE_PATH" rev-parse HEAD 2>/dev/null)
-        git submodule update --remote --recursive "$SUBMODULE_PATH" 2>/dev/null
-        NEW_HEAD=$(git -C "$SUBMODULE_PATH" rev-parse HEAD 2>/dev/null)
-        if [ -n "$NEW_HEAD" ] && [ "$NEW_HEAD" != "$CURR_HEAD" ]; then
-            SUBMODULE_UPDATED=1
-            echo "Antigravity Sync (POSIX): Updated $SUBMODULE_PATH to remote commit $(echo "$NEW_HEAD" | cut -c1-7)."
-        fi
-    fi
-
-    if [ "$SUBMODULE_UPDATED" -eq 1 ]; then
-        git add "$SUBMODULE_PATH"
-        echo "Antigravity Sync (POSIX): Submodule gitlink staged for commit."
-    fi
+    done
 fi
 
-# Exit silently if vault registry map is still unavailable
+[ -n "$LOCAL_VAULT" ] || exit 0
+REGISTRY_MAP="$LOCAL_VAULT/skill-map.json"
 [ -f "$REGISTRY_MAP" ] || exit 0
 
 mkdir -p "$AGENTS_SKILLS_DIR"
@@ -152,14 +121,11 @@ ACTIVE_LIST=""
 
 for skill in $UNIQUE_SKILLS; do
     folder_name=$(basename "$skill")
-    if [ -d "$REPO_ROOT/$SUBMODULE_PATH/globals/$folder_name" ]; then
+    if [ -d "$LOCAL_VAULT/globals/$folder_name" ]; then
         continue
     fi
 
-    target="$REPO_ROOT/$SUBMODULE_PATH/$skill"
-    if [ ! -d "$target" ] && [ -d "$REPO_ROOT/../agent-skills-vault/$skill" ]; then
-        target="$REPO_ROOT/../agent-skills-vault/$skill"
-    fi
+    target="$LOCAL_VAULT/$skill"
 
     if [ -d "$target" ]; then
         # Primary .agents/skills/ link

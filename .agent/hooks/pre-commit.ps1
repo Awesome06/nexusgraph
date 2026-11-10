@@ -3,6 +3,7 @@
 # 1. Updates vendored submodules (.agent/.registry) from vault upstream.
 # 2. Analyzes repository stack signatures and context-corroborates skills into .agents/skills/ (Antigravity customization root).
 # 3. Lints wiki knowledge graph links.
+# 4. Executes fast local commit lint gate. Deep test suites run on pre-push.
 
 $repoRoot = git rev-parse --show-toplevel 2>$null
 if ($LASTEXITCODE -ne 0 -or -not $repoRoot) { exit 0 }
@@ -12,56 +13,33 @@ $submodulePath = ".agent/.registry"
 $registryMapPath = "$submodulePath/skill-map.json"
 $activeSkillsPath = ".agent/.active-skills.json"
 $agentsSkillsDir = ".agents\skills"
+$legacySkillsDir = ".agent\skills"
 
 # ---------------------------------------------------------
-# Step 1: Submodule Initialization & Automatic Synchronization
+# Step 1: Discover Central Agent Skills Vault (Zero Submodule)
 # ---------------------------------------------------------
-if (Test-Path ".gitmodules") {
-    if (-not (Test-Path "$submodulePath/skill-map.json")) {
-        Write-Host "Antigravity Sync: Initializing $submodulePath submodule..." -ForegroundColor Yellow
-        git submodule update --init --recursive $submodulePath 2>$null
-    }
-
-    $submoduleUpdated = $false
-    $localVault = Resolve-Path (Join-Path $repoRoot "..\agent-skills-vault") -ErrorAction SilentlyContinue
-    if (-not $localVault) {
-        $localVault = Resolve-Path (Join-Path $repoRoot "..\..\agent-skills-vault") -ErrorAction SilentlyContinue
-    }
-
-    if ($localVault -and (Test-Path (Join-Path $localVault "skill-map.json"))) {
-        try {
-            $vaultHead = (git -C $localVault rev-parse HEAD 2>$null).Trim()
-            $currentSubHead = (git -C $submodulePath rev-parse HEAD 2>$null).Trim()
-
-            if ($vaultHead -and ($vaultHead -ne $currentSubHead)) {
-                $isSubDirty = git -C $submodulePath status --porcelain 2>$null
-                if (-not $isSubDirty) {
-                    $normPath = ($localVault -replace '\\', '/')
-                    git -C $submodulePath fetch $normPath HEAD 2>&1 | Out-Null
-                    git -C $submodulePath checkout -q FETCH_HEAD 2>&1 | Out-Null
-                    $submoduleUpdated = $true
-                    Write-Host "Antigravity Sync: Submodule $submodulePath updated to local vault commit $($vaultHead.Substring(0,7))." -ForegroundColor Cyan
-                }
-            }
-        } catch {}
-    } else {
-        try {
-            $currentSubHead = (git -C $submodulePath rev-parse HEAD 2>$null).Trim()
-            git submodule update --remote --recursive $submodulePath 2>$null
-            $newSubHead = (git -C $submodulePath rev-parse HEAD 2>$null).Trim()
-            if ($newSubHead -and ($newSubHead -ne $currentSubHead)) {
-                $submoduleUpdated = $true
-                Write-Host "Antigravity Sync: Submodule $submodulePath updated to remote commit $($newSubHead.Substring(0,7))." -ForegroundColor Cyan
-            }
-        } catch {}
-    }
-
-    if ($submoduleUpdated) {
-        git add $submodulePath
-        Write-Host "Antigravity Sync: Submodule gitlink pointer staged for commit." -ForegroundColor Green
+$localVault = $env:AGENT_SKILLS_VAULT_PATH
+if (-not $localVault -or -not (Test-Path "$localVault/skill-map.json")) {
+    $searchPaths = @(
+        (Join-Path $repoRoot "..\agent-skills-vault"),
+        (Join-Path $repoRoot "..\..\agent-skills-vault"),
+        "C:\Users\Bhatn\OneDrive\Desktop\Projects\agent-skills-vault",
+        (Join-Path $HOME ".gemini\agent-skills-vault")
+    )
+    foreach ($p in $searchPaths) {
+        if (Test-Path "$p/skill-map.json") {
+            $localVault = (Resolve-Path $p).Path
+            break
+        }
     }
 }
 
+if (-not $localVault) {
+    # If central vault is not reachable on this machine, exit cleanly
+    exit 0
+}
+
+$registryMapPath = Join-Path $localVault "skill-map.json"
 if (-not (Test-Path $registryMapPath)) { exit 0 }
 
 $map = Get-Content $registryMapPath -Raw | ConvertFrom-Json
@@ -222,7 +200,7 @@ if (-not (Test-Path $agentsSkillsDir)) {
     New-Item -ItemType Directory -Path $agentsSkillsDir -Force | Out-Null
 }
 
-$globalSkills = @('code-review', 'doc-sync', 'error-discipline', 'git-release', 'incident-triaging', 'security-auditor', 'test-discipline', 'workspace-initializer', 'repo-wiki')
+$globalSkills = @('code-review', 'doc-sync', 'error-discipline', 'git-release', 'incident-triaging', 'intent-discipline', 'repo-wiki', 'script-optimization', 'security-auditor', 'strategic-reconnaissance', 'test-discipline', 'workspace-initializer')
 $protectedSkills = @('design-orchestrator', 'hackathon-evaluation-governance')
 
 function Link-SkillDirectory([string]$linkTarget, [string]$destinationDir, [string]$skillFolder) {
@@ -238,15 +216,11 @@ function Link-SkillDirectory([string]$linkTarget, [string]$destinationDir, [stri
 
 foreach ($req in $verifiedTargetSkills) {
     $folderName = Split-Path $req -Leaf
-    if ($folderName -in $globalSkills -or (Test-Path (Join-Path $repoRoot "$submodulePath\globals\$folderName"))) { continue }
+    if ($folderName -in $globalSkills -or (Test-Path (Join-Path $localVault "globals\$folderName"))) { continue }
 
-    $targetPath = Join-Path $repoRoot "$submodulePath\$req"
+    $targetPath = Join-Path $localVault $req
     if (-not (Test-Path $targetPath)) {
-        if ($localVault -and (Test-Path (Join-Path $localVault $req))) {
-            $targetPath = Join-Path $localVault $req
-        } else {
-            continue
-        }
+        continue
     }
 
     # Primary Antigravity customization discovery link
@@ -293,10 +267,7 @@ if ($driftDetected) {
 # ---------------------------------------------------------
 # Step 3: Knowledge Graph Wiki Validation
 # ---------------------------------------------------------
-$wikiEnginePath = "$submodulePath\scripts\wiki-engine.py"
-if (-not (Test-Path $wikiEnginePath) -and $localVault -and (Test-Path "$localVault\scripts\wiki-engine.py")) {
-    $wikiEnginePath = "$localVault\scripts\wiki-engine.py"
-}
+$wikiEnginePath = Join-Path $localVault "scripts\wiki-engine.py"
 if ((Test-Path "wiki") -and (Test-Path $wikiEnginePath)) {
     if (Get-Command python -ErrorAction SilentlyContinue) {
         python $wikiEnginePath --root wiki lint
